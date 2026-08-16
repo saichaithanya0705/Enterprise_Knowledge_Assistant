@@ -10,7 +10,6 @@ services:
     rootDir: backend
     buildCommand: pip install -r requirements.txt
     startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
-    initialDeployHook: python bootstrap_admin.py
     healthCheckPath: /
     autoDeployTrigger: commit
     envVars:
@@ -47,7 +46,7 @@ services:
       - key: BOOTSTRAP_ADMIN_NAME
         value: Administrator
       - key: BOOTSTRAP_ADMIN_EMAIL
-        value: admin@enterprise.local
+        value: admin@example.com
       - key: BOOTSTRAP_ADMIN_PASSWORD
         sync: false
 

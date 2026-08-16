@@ -8,8 +8,8 @@ import os
 
 from app.db.database import SessionLocal, init_db
 from app.services.document_service import ingest_document
-from app.repositories import document_repo, user_repo
-from app.core.security import hash_password, is_password_strong
+from app.repositories import document_repo
+from app.services.admin_bootstrap import seed_admin_from_environment
 
 SAMPLE_DIR = os.path.join(os.path.dirname(__file__), "data", "sample_docs")
 
@@ -19,24 +19,6 @@ CATEGORY_BY_FILE = {
     "it_password_reset.txt": "IT",
     "remote_work_policy.md": "HR",
 }
-
-
-def seed_admin_from_environment(db):
-    """Create an initial admin only when explicit credentials are supplied."""
-    email = os.getenv("BOOTSTRAP_ADMIN_EMAIL", "").strip().lower()
-    password = os.getenv("BOOTSTRAP_ADMIN_PASSWORD", "")
-    name = os.getenv("BOOTSTRAP_ADMIN_NAME", "Administrator").strip() or "Administrator"
-    if not email and not password:
-        return
-    if not email or not password:
-        raise RuntimeError("Set both BOOTSTRAP_ADMIN_EMAIL and BOOTSTRAP_ADMIN_PASSWORD.")
-    if not is_password_strong(password):
-        raise RuntimeError("BOOTSTRAP_ADMIN_PASSWORD does not meet the password policy.")
-    if user_repo.get_by_email(db, email):
-        print(f"skip (admin already exists): {email}")
-        return
-    user_repo.create_user(db, name, email, hash_password(password), role="ADMIN")
-    print(f"created bootstrap admin: {email}")
 
 
 async def main():
