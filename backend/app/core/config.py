@@ -12,7 +12,7 @@ class Settings(BaseSettings):
     key_gateway_api_key: str = ""
     key_gateway_chat_model: str = "gpt-4o-mini"
 
-    # NVIDIA NIM API - used for embeddings + reranking only. Never hardcode,
+    # NVIDIA NIM API - used for embeddings, reranking, and chat fallback. Never hardcode,
     # never sent to the frontend.
     nvidia_api_key: str = ""
     nvidia_base_url: str = "https://integrate.api.nvidia.com/v1"

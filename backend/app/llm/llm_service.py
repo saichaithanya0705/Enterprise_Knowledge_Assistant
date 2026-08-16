@@ -22,8 +22,8 @@ def _extractive_fallback(context: str, question: str) -> str:
     if not context:
         return NO_CONTEXT_FALLBACK
     return (
-        "[Local fallback mode - no Key Gateway configured yet, so this is an extractive "
-        "answer built directly from the most relevant passage rather than an LLM-generated one.]\n\n"
+        "[Local extractive fallback mode - provider generation was unavailable, so this answer "
+        "is built directly from the most relevant retrieved passage.]\n\n"
         + context.split("\n\n---\n\n")[0]
     )
 

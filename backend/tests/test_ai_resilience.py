@@ -259,6 +259,28 @@ async def test_uncited_live_answer_uses_extractively_grounded_local_fallback(mon
     assert "Employees receive 18 days of annual leave." in answer
 
 
+@pytest.mark.asyncio
+async def test_extractive_fallback_does_not_misstate_provider_configuration(monkeypatch):
+    _configure_gateway(monkeypatch)
+
+    async def gateway_failure(*args, **kwargs):
+        raise gateway_module.GatewayError("configured gateway unavailable")
+
+    monkeypatch.setattr(llm_service_module.gateway_client, "chat_completion", gateway_failure)
+    monkeypatch.setattr(
+        llm_service_module,
+        "nvidia_client",
+        SimpleNamespace(configured=False),
+    )
+    context = "[1] leave-policy.txt\nEmployees receive 18 days of annual leave."
+
+    answer, backend = await generate_answer(context, "How much leave do employees receive?")
+
+    assert backend == "local_fallback"
+    assert answer.startswith("[Local extractive fallback mode")
+    assert "not configured" not in answer.lower()
+
+
 def test_prompt_preview_redacts_history_and_is_bounded():
     preview_builder = getattr(templates_module, "build_prompt_preview", None)
     assert callable(preview_builder)
