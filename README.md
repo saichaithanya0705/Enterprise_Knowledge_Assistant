@@ -266,6 +266,7 @@ User Question
 
 ## Known Limitations
 
+- The checked-in Render Blueprint targets the free tier for temporary evaluation. Render's free filesystem is ephemeral, so accounts, conversations, and Chroma indexes can be lost after a restart or redeploy. A durable deployment must use the documented `/var/data` persistent-disk paths or migrate to managed database/vector storage.
 - Local fallback embeddings (hashing-based) are not semantically meaningful — they exist only so the app is demoable before a real NVIDIA key is added. Retrieval quality is materially better once NVIDIA embeddings are live.
 - The NVIDIA reranking request/response shape in `nvidia_client.py` was built from documentation, not verified against live traffic (no key was available during development) — worth a smoke test once your key is in.
 - Authorization is role-based at the application level; document access is currently global to administrators rather than department-scoped.

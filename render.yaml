@@ -1,8 +1,11 @@
 services:
+  # Free-tier demo: SQLite and Chroma live on Render's ephemeral filesystem.
+  # Upgrade this service and restore the /var/data disk configuration before
+  # treating accounts, conversations, or indexed documents as durable data.
   - type: web
     name: eka-api-saichaithanya0705
     runtime: python
-    plan: starter
+    plan: free
     region: singapore
     rootDir: backend
     buildCommand: pip install -r requirements.txt
@@ -10,21 +13,17 @@ services:
     initialDeployHook: python bootstrap_admin.py
     healthCheckPath: /
     autoDeployTrigger: commit
-    disk:
-      name: eka-data
-      mountPath: /var/data
-      sizeGB: 1
     envVars:
       - key: PYTHON_VERSION
         value: 3.12.10
       - key: APP_ENVIRONMENT
         value: production
       - key: DATABASE_URL
-        value: sqlite:////var/data/knowledge_assistant.db
+        value: sqlite:///./data/knowledge_assistant.db
       - key: CHROMA_PERSIST_DIR
-        value: /var/data/chroma
+        value: ./data/chroma
       - key: UPLOAD_DIR
-        value: /var/data/uploads
+        value: ./data/uploads
       - key: CORS_ORIGINS
         value: https://eka-web-saichaithanya0705.onrender.com
       - key: JWT_SECRET_KEY
