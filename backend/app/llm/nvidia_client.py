@@ -1,7 +1,6 @@
 """
 Thin HTTP client for NVIDIA NIM (build.nvidia.com / integrate.api.nvidia.com):
-embeddings and reranking only - chat/answer generation goes through the Key
-Gateway instead (see gateway_client.py). The API key comes only from the
+embeddings, reranking, and fallback chat generation. The API key comes only from the
 NVIDIA_API_KEY environment variable and is never exposed to the frontend.
 Retries transient failures with backoff.
 """
@@ -11,6 +10,7 @@ import httpx
 from tenacity import retry, retry_if_exception, stop_after_attempt, wait_exponential
 
 from app.core.config import get_settings
+from app.llm.openai_compat import ChatCompletionContractError, extract_chat_content
 
 settings = get_settings()
 
@@ -47,6 +47,31 @@ class NvidiaClient:
 
     def _headers(self) -> dict:
         return {"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"}
+
+    @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=0.5, min=0.5, max=4),
+           retry=retry_if_exception(_is_retryable), reraise=True)
+    async def chat_completion(self, messages: list[dict], temperature: float = 0.2) -> str:
+        if not self.configured:
+            raise NvidiaApiError("NVIDIA_API_KEY is not configured")
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.post(
+                f"{self.base_url}/chat/completions",
+                headers=self._headers(),
+                json={
+                    "model": settings.nvidia_chat_model,
+                    "messages": messages,
+                    "temperature": temperature,
+                },
+            )
+            resp.raise_for_status()
+            try:
+                payload = resp.json()
+            except (TypeError, ValueError) as exc:
+                raise NvidiaApiError("NVIDIA chat response was not valid JSON") from exc
+            try:
+                return extract_chat_content(payload, "NVIDIA chat")
+            except ChatCompletionContractError as exc:
+                raise NvidiaApiError(str(exc)) from exc
 
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=0.5, min=0.5, max=4),
            retry=retry_if_exception(_is_retryable), reraise=True)

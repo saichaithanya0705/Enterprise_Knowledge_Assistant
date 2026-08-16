@@ -176,6 +176,19 @@ def test_system_status_reports_local_fallback_when_unconfigured(client):
     assert payload["rerank_backend"] == "local_fallback"
 
 
+def test_system_status_reports_nvidia_chat_when_gateway_is_unavailable(client, monkeypatch):
+    from app.api.routes import system as system_module
+
+    monkeypatch.setattr(system_module.settings, "key_gateway_url", "")
+    monkeypatch.setattr(system_module.settings, "key_gateway_api_key", "")
+    monkeypatch.setattr(system_module.settings, "nvidia_api_key", "configured")
+
+    payload = client.get("/api/system/status").json()
+
+    assert payload["chat_backend"] == "configured_unverified"
+    assert payload["chat_model"] == "meta/llama-3.1-8b-instruct"
+
+
 def test_nvidia_model_and_dimension_generations_do_not_collide(monkeypatch, tmp_path):
     _reset_vector_store(monkeypatch, tmp_path)
     settings = get_settings()

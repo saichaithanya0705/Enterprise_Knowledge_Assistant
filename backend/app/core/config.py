@@ -22,6 +22,7 @@ class Settings(BaseSettings):
     nvidia_rerank_url: str = "https://integrate.api.nvidia.com/v1/ranking"
     nvidia_embedding_model: str = "nvidia/nv-embedqa-e5-v5"
     nvidia_rerank_model: str = "nvidia/nv-rerankqa-mistral-4b-v3"
+    nvidia_chat_model: str = "meta/llama-3.1-8b-instruct"
 
     # Authentication. Production deployments must override the development
     # secret; startup rejects the placeholder outside local/test databases.

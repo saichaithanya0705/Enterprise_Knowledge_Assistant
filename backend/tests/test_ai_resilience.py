@@ -61,6 +61,16 @@ class _PayloadClient:
         return _Response(self.payload)
 
 
+class _CapturePayloadClient(_PayloadClient):
+    def __init__(self, payload):
+        super().__init__(payload)
+        self.calls = []
+
+    async def post(self, url, **kwargs):
+        self.calls.append({"url": url, **kwargs})
+        return _Response(self.payload)
+
+
 class _SequenceClient:
     def __init__(self, outcomes, state):
         self.outcomes = outcomes
@@ -300,6 +310,62 @@ async def test_generate_answer_passes_prepared_messages_to_gateway_without_rebui
     assert answer == "PTO is approved [1]"
     assert backend == "key_gateway"
     assert captured["messages"] is prepared_messages
+
+
+@pytest.mark.asyncio
+async def test_generate_answer_falls_back_from_gateway_to_grounded_nvidia_chat(monkeypatch):
+    _configure_gateway(monkeypatch)
+    _configure_nvidia(monkeypatch)
+    prepared_messages = [
+        {"role": "system", "content": SYSTEM_INSTRUCTIONS},
+        {"role": "user", "content": "Context:\n[1] policy.txt\nPTO is approved.\n\nQuestion: How?"},
+    ]
+    captured = {}
+
+    async def gateway_failure(*args, **kwargs):
+        raise gateway_module.GatewayError("gateway unavailable")
+
+    async def nvidia_answer(messages, **kwargs):
+        captured["messages"] = messages
+        return "PTO is approved [1]"
+
+    monkeypatch.setattr(llm_service_module.gateway_client, "chat_completion", gateway_failure)
+    monkeypatch.setattr(
+        llm_service_module,
+        "nvidia_client",
+        SimpleNamespace(configured=True, chat_completion=nvidia_answer),
+        raising=False,
+    )
+
+    answer, backend = await generate_answer(
+        "[1] policy.txt\nPTO is approved.",
+        "How?",
+        prepared_messages=prepared_messages,
+    )
+
+    assert answer == "PTO is approved [1]"
+    assert backend == "nvidia_chat"
+    assert captured["messages"] is prepared_messages
+
+
+@pytest.mark.asyncio
+async def test_nvidia_chat_uses_configured_model_and_openai_compatible_contract(monkeypatch):
+    _configure_nvidia(monkeypatch)
+    client = _CapturePayloadClient(
+        {"choices": [{"message": {"content": "Grounded NVIDIA answer [1]"}}]}
+    )
+    monkeypatch.setattr(nvidia_module.httpx, "AsyncClient", lambda *args, **kwargs: client)
+    messages = [{"role": "user", "content": "Use source [1]."}]
+
+    answer = await nvidia_module.NvidiaClient().chat_completion(messages)
+
+    assert answer == "Grounded NVIDIA answer [1]"
+    assert client.calls[0]["url"] == "https://integrate.api.nvidia.com/v1/chat/completions"
+    assert client.calls[0]["json"] == {
+        "model": "meta/llama-3.1-8b-instruct",
+        "messages": messages,
+        "temperature": 0.2,
+    }
 
 
 @pytest.mark.asyncio

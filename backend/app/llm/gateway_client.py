@@ -9,6 +9,7 @@ import httpx
 from tenacity import retry, retry_if_exception, stop_after_attempt, wait_exponential
 
 from app.core.config import get_settings
+from app.llm.openai_compat import ChatCompletionContractError, extract_chat_content
 
 settings = get_settings()
 
@@ -25,21 +26,6 @@ def _is_retryable(exc: BaseException) -> bool:
             return False
         return response.status_code == 429 or 500 <= response.status_code < 600
     return False
-
-
-def _extract_content(payload: object) -> str:
-    if not isinstance(payload, dict):
-        raise GatewayError("Key Gateway returned a non-object payload")
-    choices = payload.get("choices")
-    if not isinstance(choices, list) or not choices or not isinstance(choices[0], dict):
-        raise GatewayError("Key Gateway response did not contain choices")
-    message = choices[0].get("message")
-    if not isinstance(message, dict):
-        raise GatewayError("Key Gateway response did not contain a message")
-    content = message.get("content")
-    if not isinstance(content, str) or not content.strip():
-        raise GatewayError("Key Gateway response did not contain string content")
-    return content
 
 
 class GatewayClient:
@@ -107,7 +93,10 @@ class GatewayClient:
                         payload = resp.json()
                     except (TypeError, ValueError) as exc:
                         raise GatewayError("Key Gateway returned invalid JSON") from exc
-                    return _extract_content(payload)
+                    try:
+                        return extract_chat_content(payload, "Key Gateway")
+                    except ChatCompletionContractError as exc:
+                        raise GatewayError(str(exc)) from exc
                 except httpx.HTTPStatusError as exc:
                     if exc.response is not None and exc.response.status_code in {404, 405}:
                         last_error = exc

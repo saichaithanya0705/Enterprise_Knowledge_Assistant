@@ -19,7 +19,11 @@ def status(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    chat_backend = "configured_unverified" if settings.key_gateway_configured else "local_fallback"
+    chat_backend = (
+        "configured_unverified"
+        if settings.key_gateway_configured or settings.nvidia_configured
+        else "local_fallback"
+    )
     embedding_backend = "configured_unverified" if settings.nvidia_configured else "local_fallback"
     ready_metadata_status = "available"
     try:
@@ -49,7 +53,13 @@ def status(
         "chat_backend": chat_backend,
         "embedding_backend": embedding_backend,
         "rerank_backend": embedding_backend,
-        "chat_model": settings.key_gateway_chat_model if settings.key_gateway_configured else "local_fallback (extractive)",
+        "chat_model": (
+            settings.key_gateway_chat_model
+            if settings.key_gateway_configured
+            else settings.nvidia_chat_model
+            if settings.nvidia_configured
+            else "local_fallback (extractive)"
+        ),
         "embedding_model": settings.nvidia_embedding_model if settings.nvidia_configured else "local_fallback (hashing)",
         "rerank_model": settings.nvidia_rerank_model if settings.nvidia_configured else "local_fallback (lexical overlap)",
         "vector_store": "chromadb",

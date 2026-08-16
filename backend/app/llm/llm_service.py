@@ -1,10 +1,10 @@
 """
-Dedicated LLM service - the only place that talks to the Key Gateway for
-answer generation. Routes never call the gateway client directly.
+Dedicated LLM service - the only place that selects chat providers for answer
+generation. Routes never call provider clients directly.
 
-When the Key Gateway isn't configured yet, falls back to a transparent
-extractive answer built from the retrieved context, so the app is fully
-demoable before real credentials are wired in.
+Provider order is Key Gateway, NVIDIA chat, then a transparent extractive
+answer built from retrieved context. Every generated answer must cite a valid
+context source before it can be persisted.
 """
 import logging
 import re
@@ -12,6 +12,7 @@ import re
 import httpx
 
 from app.llm.gateway_client import gateway_client, GatewayError
+from app.llm.nvidia_client import nvidia_client, NvidiaApiError
 from app.prompts.templates import build_chat_messages, NO_CONTEXT_FALLBACK
 
 logger = logging.getLogger(__name__)
@@ -46,23 +47,28 @@ async def generate_answer(
     if not context:
         return NO_CONTEXT_FALLBACK, "local_fallback"
 
+    messages = (
+        prepared_messages
+        if prepared_messages is not None
+        else build_chat_messages(context, question, history)
+    )
+
     if gateway_client.configured:
         try:
-            messages = (
-                prepared_messages
-                if prepared_messages is not None
-                else build_chat_messages(context, question, history)
-            )
             answer = await gateway_client.chat_completion(messages)
             if not isinstance(answer, str) or not _has_in_range_context_citation(answer, context):
                 raise GatewayError("Key Gateway answer was not grounded with a valid context citation")
             return answer.strip(), "key_gateway"
         except (GatewayError, httpx.HTTPError) as e:
-            # Belt-and-suspenders: gateway_client should already wrap HTTP
-            # failures as GatewayError, but a raw transport-level error
-            # (network drop, timeout after retries) must not crash the whole
-            # chat request either - always fall back to the extractive answer.
-            logger.warning("Key Gateway call failed, falling back to extractive answer: %s", e)
-            return _extractive_fallback(context, question), "local_fallback"
+            logger.warning("Key Gateway call failed; trying NVIDIA chat fallback: %s", e)
+
+    if nvidia_client.configured:
+        try:
+            answer = await nvidia_client.chat_completion(messages)
+            if not isinstance(answer, str) or not _has_in_range_context_citation(answer, context):
+                raise NvidiaApiError("NVIDIA chat answer was not grounded with a valid context citation")
+            return answer.strip(), "nvidia_chat"
+        except (NvidiaApiError, httpx.HTTPError) as e:
+            logger.warning("NVIDIA chat fallback failed; using extractive answer: %s", e)
 
     return _extractive_fallback(context, question), "local_fallback"

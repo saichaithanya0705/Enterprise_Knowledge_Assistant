@@ -246,7 +246,7 @@ npm run build
 The whole app already runs end-to-end without either credential. Once you have them:
 
 1. **Key Gateway**: set `KEY_GATEWAY_URL` and `KEY_GATEWAY_API_KEY` in `backend/.env`
-2. **NVIDIA**: get a key from https://build.nvidia.com, set `NVIDIA_API_KEY` in `backend/.env`
+2. **NVIDIA**: get a key from https://build.nvidia.com, set `NVIDIA_API_KEY` in `backend/.env`; it powers embeddings, reranking, and chat fallback when the Key Gateway is unavailable
 3. Restart the backend — no code changes needed either way. `/api/system/status` will show `configured_unverified` for configured providers and the current index lifecycle state; it does not persist live provider health. Completed request traces show `key_gateway` / `nvidia` when those calls handle a request, and `local_fallback` when they fall back. You can set one without the other; the pipeline runs correctly either way.
 
 ## RAG Flow (for your presentation)
