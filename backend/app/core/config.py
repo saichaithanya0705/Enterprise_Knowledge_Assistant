@@ -16,12 +16,11 @@ class Settings(BaseSettings):
     # never sent to the frontend.
     nvidia_api_key: str = ""
     nvidia_base_url: str = "https://integrate.api.nvidia.com/v1"
-    # NOTE: NVIDIA retired the old ai.api.nvidia.com/v1/retrieval/.../reranking
-    # endpoint (returns 404 now). Reranking is served from the same host as
-    # embeddings/chat under /v1/ranking.
-    nvidia_rerank_url: str = "https://integrate.api.nvidia.com/v1/ranking"
+    # Hosted reranking uses NVIDIA's retrieval API, which has a separate host
+    # and model contract from the OpenAI-compatible embeddings/chat endpoints.
+    nvidia_rerank_url: str = "https://ai.api.nvidia.com/v1/retrieval/nvidia/reranking"
     nvidia_embedding_model: str = "nvidia/nv-embedqa-e5-v5"
-    nvidia_rerank_model: str = "nvidia/nv-rerankqa-mistral-4b-v3"
+    nvidia_rerank_model: str = "nv-rerank-qa-mistral-4b:1"
     nvidia_chat_model: str = "meta/llama-3.1-8b-instruct"
 
     # Authentication. Production deployments must override the development

@@ -1,6 +1,35 @@
 import { render, screen } from "@testing-library/react";
 import { Sidebar } from "./Sidebar";
 
+function renderSidebar(overrides = {}) {
+  return render(
+    <Sidebar
+      page="chat"
+      onNavigate={() => {}}
+      conversations={[]}
+      activeConversationId={null}
+      onSelectConversation={() => {}}
+      onNewChat={() => {}}
+      onDeleteConversation={() => {}}
+      {...overrides}
+    />,
+  );
+}
+
+test("hides document library and admin control from normal users", () => {
+  renderSidebar({ isAdmin: false, user: { name: "Member", role: "USER" } });
+
+  expect(screen.queryByRole("button", { name: "Document library" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Admin control" })).not.toBeInTheDocument();
+});
+
+test("shows document library and admin control to administrators", () => {
+  renderSidebar({ isAdmin: true, user: { name: "Administrator", role: "ADMIN" } });
+
+  expect(screen.getByRole("button", { name: "Document library" })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Admin control" })).toBeInTheDocument();
+});
+
 test("does not present configured-but-unverified providers as live", () => {
   render(
     <Sidebar

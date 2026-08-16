@@ -88,6 +88,22 @@ def test_non_admin_is_denied_all_admin_entry_points(client, auth_headers):
         assert response.status_code == 403, path
 
 
+def test_non_admin_is_denied_every_document_library_operation(client, auth_headers):
+    responses = (
+        client.get("/api/documents", headers=auth_headers),
+        client.post(
+            "/api/documents",
+            files={"file": ("policy.txt", io.BytesIO(b"private policy"), "text/plain")},
+            data={"category": "General"},
+            headers=auth_headers,
+        ),
+        client.get("/api/documents/not-a-document/chunks", headers=auth_headers),
+        client.delete("/api/documents/not-a-document", headers=auth_headers),
+    )
+
+    assert [response.status_code for response in responses] == [403, 403, 403, 403]
+
+
 def test_conversation_list_read_delete_and_chat_are_user_scoped(
     client, auth_headers, admin_headers
 ):

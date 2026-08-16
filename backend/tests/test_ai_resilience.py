@@ -391,6 +391,31 @@ async def test_nvidia_chat_uses_configured_model_and_openai_compatible_contract(
 
 
 @pytest.mark.asyncio
+async def test_nvidia_rerank_uses_current_hosted_api_contract(monkeypatch):
+    _configure_nvidia(monkeypatch)
+    client = _CapturePayloadClient(
+        {"rankings": [{"index": 1, "logit": 2.5}, {"index": 0, "logit": -0.5}]}
+    )
+    monkeypatch.setattr(nvidia_module.httpx, "AsyncClient", lambda *args, **kwargs: client)
+
+    scores = await nvidia_module.NvidiaClient().rerank(
+        "leave policy",
+        ["office parking", "annual leave policy"],
+    )
+
+    assert scores == [-0.5, 2.5]
+    assert client.calls[0]["url"] == "https://ai.api.nvidia.com/v1/retrieval/nvidia/reranking"
+    assert client.calls[0]["json"] == {
+        "model": "nv-rerank-qa-mistral-4b:1",
+        "query": {"text": "leave policy"},
+        "passages": [
+            {"text": "office parking"},
+            {"text": "annual leave policy"},
+        ],
+    }
+
+
+@pytest.mark.asyncio
 async def test_rerank_handles_extreme_finite_logits_without_overflow(monkeypatch):
     _configure_nvidia(monkeypatch)
 

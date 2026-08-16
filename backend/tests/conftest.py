@@ -14,6 +14,8 @@ from fastapi.testclient import TestClient
 os.environ["KEY_GATEWAY_URL"] = ""
 os.environ["KEY_GATEWAY_API_KEY"] = ""
 os.environ["NVIDIA_API_KEY"] = ""
+os.environ["NVIDIA_RERANK_URL"] = "https://ai.api.nvidia.com/v1/retrieval/nvidia/reranking"
+os.environ["NVIDIA_RERANK_MODEL"] = "nv-rerank-qa-mistral-4b:1"
 os.environ["JWT_SECRET_KEY"] = "test-secret-not-for-production"
 os.environ["APP_ENVIRONMENT"] = "test"
 

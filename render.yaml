@@ -36,11 +36,11 @@ services:
       - key: NVIDIA_BASE_URL
         value: https://integrate.api.nvidia.com/v1
       - key: NVIDIA_RERANK_URL
-        value: https://integrate.api.nvidia.com/v1/ranking
+        value: https://ai.api.nvidia.com/v1/retrieval/nvidia/reranking
       - key: NVIDIA_EMBEDDING_MODEL
         value: nvidia/nv-embedqa-e5-v5
       - key: NVIDIA_RERANK_MODEL
-        value: nvidia/nv-rerankqa-mistral-4b-v3
+        value: nv-rerank-qa-mistral-4b:1
       - key: NVIDIA_CHAT_MODEL
         value: meta/llama-3.1-8b-instruct
       - key: BOOTSTRAP_ADMIN_NAME
