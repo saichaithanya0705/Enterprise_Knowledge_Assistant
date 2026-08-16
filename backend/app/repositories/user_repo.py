@@ -39,6 +39,28 @@ def create_user(db: Session, name: str, email: str, password_hash: str, role: st
         raise
 
 
+def synchronize_bootstrap_admin(
+    db: Session,
+    user: User,
+    *,
+    name: str,
+    password_hash: str | None,
+) -> User:
+    """Atomically align an existing bootstrap identity with environment policy."""
+    user.name = name
+    user.role = "ADMIN"
+    user.is_active = True
+    if password_hash is not None:
+        user.password_hash = password_hash
+    try:
+        db.commit()
+        db.refresh(user)
+        return user
+    except SQLAlchemyError:
+        db.rollback()
+        raise
+
+
 def list_users(db: Session) -> list[User]:
     try:
         return db.query(User).order_by(User.created_at.desc()).all()

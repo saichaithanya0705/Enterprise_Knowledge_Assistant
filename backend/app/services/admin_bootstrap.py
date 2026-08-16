@@ -4,7 +4,7 @@ import os
 
 from pydantic import ValidationError
 
-from app.core.security import hash_password, is_password_strong
+from app.core.security import hash_password, is_password_strong, verify_password
 from app.db.database import SessionLocal
 from app.repositories import user_repo
 from app.schemas.auth import LoginRequest
@@ -28,7 +28,15 @@ def seed_admin_from_environment(db):
     normalized_email = str(credentials.email)
     existing = user_repo.get_by_email(db, normalized_email)
     if existing:
-        return existing
+        password_hash = None
+        if not verify_password(password, existing.password_hash):
+            password_hash = hash_password(password)
+        return user_repo.synchronize_bootstrap_admin(
+            db,
+            existing,
+            name=name,
+            password_hash=password_hash,
+        )
     return user_repo.create_user(
         db,
         name,
