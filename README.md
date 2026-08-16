@@ -41,7 +41,7 @@ A full-stack app with authenticated employee workspaces and an admin control roo
 **Vector Store:** ChromaDB (persistent, local)
 **AI — split across two providers:**
 - **Key Gateway** (OpenAI-compatible endpoint you provide) → chat/answer generation + query rewriting
-- **NVIDIA NIM** (`build.nvidia.com` / `integrate.api.nvidia.com`) → NV-Embed embeddings + NV-RerankQA reranking
+- **NVIDIA NIM** (`build.nvidia.com`, `integrate.api.nvidia.com`, and `ai.api.nvidia.com`) → embeddings, hosted reranking, and chat fallback
 
 ## Architecture
 
@@ -81,7 +81,7 @@ Repositories (SQLite)         RAG Pipeline
 1. **Ingest** — PDF/DOCX/TXT/MD → text extraction → structure-aware chunking (headings first, then sliding window with overlap for long sections)
 2. **Embed** — each chunk is embedded through the configured NVIDIA model or the fixed local fallback and upserted into a backend-specific ChromaDB collection, keyed by the SQLite chunk id
 3. **Retrieve** — on a query: BM25 over chunk text (stopword-filtered) + ChromaDB cosine similarity search, fused with weighted Reciprocal Rank Fusion
-4. **Rerank** — NVIDIA's `nv-rerankqa-mistral-4b-v3` cross-encoder scores each candidate against the actual query (a real second-stage reranker, not just re-sorting the fusion score)
+4. **Rerank** — NVIDIA's hosted `nv-rerank-qa-mistral-4b:1` cross-encoder scores each candidate against the actual query (a real second-stage reranker, not just re-sorting the fusion score)
 5. **Context build** — relevance threshold filter, near-duplicate removal, limited to the top N chunks
 6. **Generate** — context + conversation history + question assembled via a dedicated prompt template, sent to your Key Gateway's chat model, instructed to answer only from context and cite sources inline
 7. **Respond** — users receive the answer plus safe source metadata; admins can inspect excerpts and the full persisted debug trace
@@ -117,7 +117,7 @@ eka/
 │   │   │                        # retriever (BM25+RRF), context_builder, query_improver
 │   │   ├── llm/
 │   │   │   ├── gateway_client.py   # Key Gateway — chat only
-│   │   │   └── nvidia_client.py    # NVIDIA — embeddings + reranking only
+│   │   │   └── nvidia_client.py    # NVIDIA — embeddings, reranking, and chat fallback
 │   │   └── prompts/templates.py
 │   ├── tests/
 │   ├── data/sample_docs/       # generated sample HR/IT/Finance documents
@@ -191,9 +191,9 @@ KEY_GATEWAY_CHAT_MODEL=gpt-4o-mini
 # Embeddings + reranking
 NVIDIA_API_KEY=                # from build.nvidia.com — leave blank to run in local fallback mode
 NVIDIA_BASE_URL=https://integrate.api.nvidia.com/v1
-NVIDIA_RERANK_URL=https://integrate.api.nvidia.com/v1/ranking
+NVIDIA_RERANK_URL=https://ai.api.nvidia.com/v1/retrieval/nvidia/reranking
 NVIDIA_EMBEDDING_MODEL=nvidia/nv-embedqa-e5-v5
-NVIDIA_RERANK_MODEL=nvidia/nv-rerankqa-mistral-4b-v3
+NVIDIA_RERANK_MODEL=nv-rerank-qa-mistral-4b:1
 
 DATABASE_URL=sqlite:///./data/knowledge_assistant.db
 CHROMA_PERSIST_DIR=./data/chroma
@@ -268,7 +268,7 @@ User Question
 
 - The checked-in Render Blueprint targets the free tier for temporary evaluation. Render's free filesystem is ephemeral, so accounts, conversations, and Chroma indexes can be lost after a restart or redeploy. A durable deployment must use the documented `/var/data` persistent-disk paths or migrate to managed database/vector storage.
 - Local fallback embeddings (hashing-based) are not semantically meaningful — they exist only so the app is demoable before a real NVIDIA key is added. Retrieval quality is materially better once NVIDIA embeddings are live.
-- The NVIDIA reranking request/response shape in `nvidia_client.py` was built from documentation, not verified against live traffic (no key was available during development) — worth a smoke test once your key is in.
+- NVIDIA's hosted APIs are external, rate-limited services. The application validates their responses and falls back locally when a provider is unavailable; completed request traces show the backend actually used.
 - Authorization is role-based at the application level; document access is currently global to administrators rather than department-scoped.
 - Reranking and embeddings add API latency; there's no caching layer yet for repeated queries.
 - Ingestion is synchronous (upload blocks until fully chunked + embedded); fine for demo-sized documents, but a production system would background this for large files.
@@ -282,6 +282,8 @@ User Question
 - Multi-document comparison ("what changed between the old and new leave policy?")
 
 ## Presentation / Demo Flow
+
+Use the checked-in [synthetic enterprise policy PDF](output/pdf/enterprise-demo-policy.pdf) for the upload demonstration. It contains no real company or personal data.
 
 1. Show `/api/system/status` — explain local fallback versus configured/unverified status, then use a completed trace to identify the backend used per stage
 2. Upload a new HR document live → show it chunked and appear in the Documents page
