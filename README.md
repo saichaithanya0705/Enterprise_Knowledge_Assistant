@@ -19,13 +19,13 @@ A full-stack app: employees upload policy documents once, then ask questions in 
 - Grounded generation via a **Key Gateway** chat model (OpenAI-compatible), with inline `[1]` citations
 - Source cards on every answer — expandable to see the exact excerpt used
 - Multi-turn conversation memory, per-conversation, persisted in SQLite
-- A full RAG debug/trace panel: original query → improved query → every retrieved candidate with its BM25/vector/rerank scores → final context → prompt preview → which backend answered
+- A full RAG debug/trace panel: original query → improved query → every retrieved candidate with separate BM25, vector, RRF-fused, and final-rerank scores → final context → bounded prompt preview → which backend answered
 - Feedback (thumbs up/down) on any answer
 - **Works with zero external credentials**: every AI stage (chat, embeddings, reranking) has a transparent local fallback, so the whole pipeline is demoable before either API key exists
 
 ## Additional Features (beyond the brief)
 
-- Honest backend-switching: the UI and debug trace always show which backend actually answered (`key_gateway`/`nvidia` vs `local_fallback`) rather than pretending
+- Honest backend-switching: request traces show which backend actually answered (`key_gateway`/`nvidia` vs `local_fallback`); system status remains configuration-only and marks configured providers as `configured (unverified)`
 - Weighted RRF: when running on the local fallback embedding (not semantically meaningful), the fusion automatically leans on BM25 more heavily rather than letting noisy vector scores win
 - Document manager page with per-chunk preview, so you can see exactly how a document was split before it's ever queried
 - Drag-and-drop upload with category tagging (HR / IT / Finance / General)
@@ -76,7 +76,7 @@ Repositories (SQLite)         RAG Pipeline
 ## RAG Architecture
 
 1. **Ingest** — PDF/DOCX/TXT/MD → text extraction → structure-aware chunking (headings first, then sliding window with overlap for long sections)
-2. **Embed** — each chunk embedded via NVIDIA's `nv-embedqa-e5-v5` (asymmetric query/passage embeddings) and upserted into ChromaDB, keyed by the SQLite chunk id
+2. **Embed** — each chunk is embedded through the configured NVIDIA model or the fixed local fallback and upserted into a backend-specific ChromaDB collection, keyed by the SQLite chunk id
 3. **Retrieve** — on a query: BM25 over chunk text (stopword-filtered) + ChromaDB cosine similarity search, fused with weighted Reciprocal Rank Fusion
 4. **Rerank** — NVIDIA's `nv-rerankqa-mistral-4b-v3` cross-encoder scores each candidate against the actual query (a real second-stage reranker, not just re-sorting the fusion score)
 5. **Context build** — relevance threshold filter, near-duplicate removal, limited to the top N chunks
@@ -90,7 +90,11 @@ Every AI-dependent stage degrades gracefully and *transparently*, and the two pr
 - **Embeddings** (NVIDIA) → deterministic hashing vector (weak semantically, but stable)
 - **Reranking** (NVIDIA) → lexical term-overlap scoring
 
-The debug panel and `/api/system/status` always report which backend is actually live for each stage, so nothing is silently faked. If you have your NVIDIA key but not the Key Gateway yet (or vice versa), the app runs correctly with a mixed pipeline.
+The debug panel reports the backend used for each completed request. `/api/system/status` reports configuration and index lifecycle metadata only: configured providers remain `configured_unverified`, not live health. The completed request trace is the per-call evidence of which backend actually answered. If you have your NVIDIA key but not the Key Gateway yet (or vice versa), the app runs correctly with a mixed pipeline.
+
+### Chroma index generations
+
+Local fallback and NVIDIA vectors are kept in separate model/dimension-specific Chroma collections so a 256-dimensional local vector cannot be mixed with a provider vector of another dimension. A model or dimension change is a new index generation: reingest documents before relying on semantic retrieval from that generation. The legacy collection is preserved for history and deletion compatibility, but it is not silently treated as current semantic coverage; the backend index status and Sidebar warning identify incomplete coverage and the required action.
 
 ## Folder Structure
 
@@ -123,7 +127,7 @@ eka/
     │   ├── components/         # Sidebar, MessageBubble, SourceCard, DebugPanel, ...
     │   ├── pages/               # ChatPage, DocumentsPage
     │   ├── services/            # apiClient, documentService, chatService
-    │   └── context/ToastContext.jsx
+    │   └── context/               # ToastProvider, useToast, and context value
     └── tailwind.config.js
 ```
 
@@ -149,7 +153,7 @@ DELETE /api/conversations/{id}
 
 POST   /api/feedback                  { message_id, rating, comment? }
 
-GET    /api/system/status             which backends are actually live
+GET    /api/system/status             configuration + index lifecycle state (not live health)
 ```
 
 ## Environment Variables
@@ -165,7 +169,7 @@ KEY_GATEWAY_CHAT_MODEL=gpt-4o-mini
 # Embeddings + reranking
 NVIDIA_API_KEY=                # from build.nvidia.com — leave blank to run in local fallback mode
 NVIDIA_BASE_URL=https://integrate.api.nvidia.com/v1
-NVIDIA_RERANK_URL=https://ai.api.nvidia.com/v1/retrieval/nvidia/nv-rerankqa-mistral-4b-v3/reranking
+NVIDIA_RERANK_URL=https://integrate.api.nvidia.com/v1/ranking
 NVIDIA_EMBEDDING_MODEL=nvidia/nv-embedqa-e5-v5
 NVIDIA_RERANK_MODEL=nvidia/nv-rerankqa-mistral-4b-v3
 
@@ -173,9 +177,9 @@ DATABASE_URL=sqlite:///./data/knowledge_assistant.db
 CHROMA_PERSIST_DIR=./data/chroma
 ```
 
-`backend/.env` ships in this zip with these keys **blank** — fill in your actual Key Gateway URL/API key and NVIDIA API key there. It's already listed in `.gitignore` so it won't get committed if you push this to a repo.
+Copy `backend/.env.example` to `backend/.env`, then fill in your actual Key Gateway URL/API key and NVIDIA API key. Keep `backend/.env` local and uncommitted; it is listed in `.gitignore`.
 
-Frontend: `frontend/.env.example` → `VITE_API_URL=http://localhost:8000`
+Frontend: copy `frontend/.env.example` to `frontend/.env`, then set `VITE_API_URL=http://localhost:8000` if the API uses the default address.
 
 ## Installation & Running
 
@@ -204,6 +208,10 @@ npm run dev                                          # http://localhost:5173
 ```bash
 cd backend
 pytest tests/ -v
+cd ../frontend
+npm test
+npm run lint
+npm run build
 ```
 
 ## Adding Your Credentials
@@ -212,7 +220,7 @@ The whole app already runs end-to-end without either credential. Once you have t
 
 1. **Key Gateway**: set `KEY_GATEWAY_URL` and `KEY_GATEWAY_API_KEY` in `backend/.env`
 2. **NVIDIA**: get a key from https://build.nvidia.com, set `NVIDIA_API_KEY` in `backend/.env`
-3. Restart the backend — no code changes needed either way. `/api/system/status` and the debug panel will immediately show `key_gateway` / `nvidia` instead of `local_fallback` for whichever stages you've configured. You can set one without the other; the pipeline runs correctly either way.
+3. Restart the backend — no code changes needed either way. `/api/system/status` will show `configured_unverified` for configured providers and the current index lifecycle state; it does not persist live provider health. Completed request traces show `key_gateway` / `nvidia` when those calls handle a request, and `local_fallback` when they fall back. You can set one without the other; the pipeline runs correctly either way.
 
 ## RAG Flow (for your presentation)
 
@@ -247,7 +255,7 @@ User Question
 
 ## Presentation / Demo Flow
 
-1. Show `/api/system/status` — explain local fallback vs. live mode, per backend
+1. Show `/api/system/status` — explain local fallback versus configured/unverified status, then use a completed trace to identify the backend used per stage
 2. Upload a new HR document live → show it chunked and appear in the Documents page
 3. Ask a grounded question → show the cited answer + source cards
 4. Open the debug trace → walk through query improvement, BM25 vs. vector scores, what got reranked, what made the final context

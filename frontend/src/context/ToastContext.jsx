@@ -1,7 +1,6 @@
-import { createContext, useCallback, useContext, useState } from "react";
+import { useCallback, useState } from "react";
 import { ToastStack } from "../components/Toast";
-
-const ToastCtx = createContext(null);
+import { ToastCtx } from "./toastContextValue";
 
 export function ToastProvider({ children }) {
   const [toasts, setToasts] = useState([]);
@@ -21,10 +20,4 @@ export function ToastProvider({ children }) {
       <ToastStack toasts={toasts} onDismiss={dismiss} />
     </ToastCtx.Provider>
   );
-}
-
-export function useToast() {
-  const ctx = useContext(ToastCtx);
-  if (!ctx) throw new Error("useToast must be used within ToastProvider");
-  return ctx;
 }

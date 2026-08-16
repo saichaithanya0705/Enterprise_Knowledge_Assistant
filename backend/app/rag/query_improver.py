@@ -4,6 +4,8 @@ before retrieval. Uses the Key Gateway chat model for rewriting when
 configured; otherwise falls back to a lightweight rule-based expansion so
 retrieval still benefits even in local-fallback mode.
 """
+import httpx
+
 from app.llm.gateway_client import gateway_client, GatewayError
 
 _ABBREVIATIONS = {
@@ -13,6 +15,7 @@ _ABBREVIATIONS = {
     "2fa": "two-factor authentication",
     "reimb": "reimbursement",
 }
+_MAX_REWRITTEN_QUERY_LENGTH = 1000
 # Note: "it" (IT department) is deliberately excluded - it collides with the
 # common pronoun "it" and would corrupt most everyday questions.
 
@@ -48,9 +51,13 @@ async def improve_query(query: str) -> str:
                 ],
                 temperature=0.0,
             )
-            rewritten = rewritten.strip().strip('"')
+            if not isinstance(rewritten, str):
+                raise GatewayError("Key Gateway returned a non-string query rewrite")
+            rewritten = rewritten.strip().strip('"').strip()
+            if len(rewritten) > _MAX_REWRITTEN_QUERY_LENGTH:
+                raise GatewayError("Key Gateway returned an oversized query rewrite")
             return rewritten or query
-        except GatewayError:
+        except (GatewayError, httpx.HTTPError):
             pass
 
     return _rule_based_expand(query)

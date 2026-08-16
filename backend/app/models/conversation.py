@@ -2,7 +2,7 @@
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import String, Text, DateTime, ForeignKey, JSON, Integer
+from sqlalchemy import String, Text, DateTime, ForeignKey, JSON, Integer, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.database import Base
@@ -42,13 +42,21 @@ class Message(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
     conversation: Mapped["Conversation"] = relationship(back_populates="messages")
+    feedback: Mapped[list["Feedback"]] = relationship(
+        back_populates="message", cascade="all, delete-orphan"
+    )
 
 
 class Feedback(Base):
     __tablename__ = "feedback"
+    __table_args__ = (UniqueConstraint("message_id", name="uq_feedback_message_id"),)
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uid)
-    message_id: Mapped[str] = mapped_column(String(36), ForeignKey("messages.id", ondelete="CASCADE"))
+    message_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("messages.id", ondelete="CASCADE"), nullable=False
+    )
     rating: Mapped[int] = mapped_column(Integer, nullable=False)  # 1 = up, -1 = down
     comment: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+    message: Mapped["Message"] = relationship(back_populates="feedback")

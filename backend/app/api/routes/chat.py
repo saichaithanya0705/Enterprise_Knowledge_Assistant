@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 from app.db.database import get_db
 from app.schemas.chat import ChatRequest, ChatResponse
 from app.services.chat_service import answer_question
+from app.repositories.conversation_repo import ConversationNotFoundError
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
 
@@ -15,8 +16,10 @@ async def chat(payload: ChatRequest, db: Session = Depends(get_db)):
         conversation, message, answer, sources, debug_trace, grounded = await answer_question(
             db, payload.conversation_id, payload.message
         )
-    except Exception as e:  # noqa: BLE001
-        raise HTTPException(500, f"Failed to generate a response: {e}")
+    except ConversationNotFoundError:
+        raise HTTPException(404, "Conversation not found")
+    except Exception:  # noqa: BLE001
+        raise HTTPException(500, "Failed to generate a response.")
 
     return ChatResponse(
         conversation_id=conversation.id,

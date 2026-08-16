@@ -17,6 +17,10 @@ NO_CONTEXT_FALLBACK = (
     "Try rephrasing, or check with HR/IT directly."
 )
 
+# Debug traces must remain useful without duplicating sensitive conversation
+# history or allowing prompt contents to grow without bound in storage.
+PROMPT_PREVIEW_MAX_CHARS = 2_000
+
 
 def build_chat_messages(context: str, question: str, history: list[dict] | None = None) -> list[dict]:
     """
@@ -31,3 +35,29 @@ def build_chat_messages(context: str, question: str, history: list[dict] | None 
     user_content = f"Context:\n{context}\n\nQuestion: {question}" if context else f"Question: {question}"
     messages.append({"role": "user", "content": user_content})
     return messages
+
+
+def _clip_preview(text: str, max_chars: int) -> str:
+    if len(text) <= max_chars:
+        return text
+    if max_chars <= 1:
+        return text[:max_chars]
+    return text[: max_chars - 1] + "…"
+
+
+def build_prompt_preview(messages: list[dict], *, context: str, question: str) -> str:
+    """Render a bounded preview from structured values, redacting history."""
+    if not messages:
+        return ""
+
+    system_content = str(messages[0].get("content", ""))
+    prior_messages = messages[1:-1]
+
+    system_text = _clip_preview(system_content, 500)
+    question_text = _clip_preview(question, 400)
+    history_marker = f"[{len(prior_messages)} prior conversation messages omitted]"
+    prefix = f"system: {system_text}\n\nhistory: {history_marker}\n\nuser context: "
+    suffix = f"\n\nuser question: {question_text}"
+    context_budget = max(0, PROMPT_PREVIEW_MAX_CHARS - len(prefix) - len(suffix))
+    context_preview = _clip_preview(context, context_budget)
+    return prefix + context_preview + suffix

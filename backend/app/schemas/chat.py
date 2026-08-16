@@ -23,6 +23,7 @@ class RetrievedChunkTrace(BaseModel):
     vector_score: float
     bm25_score: float
     fused_score: float
+    rerank_score: float
     used_in_context: bool
     excerpt: str
 
@@ -59,4 +60,5 @@ class MessageOut(BaseModel):
     role: str
     content: str
     sources: list[dict] | None = None
+    debug: DebugTrace | None = None
     created_at: str

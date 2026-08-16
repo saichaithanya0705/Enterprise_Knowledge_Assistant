@@ -5,9 +5,12 @@ vector semantic search, fused with Reciprocal Rank Fusion (RRF).
 Kept independent of the API layer - routes call into this module, never
 the other way around.
 """
+import logging
+import math
 import re
 from dataclasses import dataclass
 
+from chromadb.errors import InternalError, RateLimitError
 from rank_bm25 import BM25Okapi
 
 from app.models.document import DocumentChunk
@@ -16,6 +19,8 @@ from app.rag import vector_store
 from app.core.config import get_settings
 
 settings = get_settings()
+logger = logging.getLogger(__name__)
+_VECTOR_AVAILABILITY_ERRORS = (InternalError, RateLimitError, ConnectionError, TimeoutError, OSError)
 
 # Common English stopwords, dropped before BM25 scoring so they don't
 # inflate matches on short chunks that just happen to share "how"/"do"/"my".
@@ -57,8 +62,17 @@ def _bm25_rank(query: str, chunks: list[DocumentChunk]) -> dict[str, float]:
     corpus = [_tokenize(c.content) for c in chunks]
     bm25 = BM25Okapi(corpus)
     scores = bm25.get_scores(_tokenize(query))
-    max_score = max(scores) if len(scores) and max(scores) > 0 else 1.0
-    return {c.id: float(s) / max_score for c, s in zip(chunks, scores)}
+    nonnegative_scores = [
+        max(0.0, float(s)) if math.isfinite(float(s)) else 0.0
+        for s in scores
+    ]
+    max_score = max(nonnegative_scores, default=0.0)
+    if max_score <= 0.0:
+        return {c.id: 0.0 for c in chunks}
+    return {
+        c.id: min(1.0, score / max_score)
+        for c, score in zip(chunks, nonnegative_scores)
+    }
 
 
 async def _vector_rank(query: str, chunks: list[DocumentChunk]) -> tuple[dict[str, float], str]:
@@ -68,7 +82,18 @@ async def _vector_rank(query: str, chunks: list[DocumentChunk]) -> tuple[dict[st
     valid_ids = {c.id for c in chunks}
     (query_vec,), backend = await embed_texts([query], input_type="query")
     # over-fetch from Chroma since results may include chunks outside this candidate set
-    raw = vector_store.query(query_vec, top_k=max(len(chunks), settings.top_k_retrieval * 3))
+    try:
+        raw = vector_store.query(
+            query_vec,
+            top_k=max(len(chunks), settings.top_k_retrieval * 3),
+            backend=backend,
+        )
+    except _VECTOR_AVAILABILITY_ERRORS as error:
+        logger.warning(
+            "Chroma retrieval unavailable (%s); using BM25-only results",
+            type(error).__name__,
+        )
+        return {}, f"{backend}_chroma_unavailable"
     scores = {cid: sim for cid, sim in raw if cid in valid_ids}
     return scores, backend
 

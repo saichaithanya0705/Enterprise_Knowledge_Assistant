@@ -7,6 +7,7 @@ extractive answer built from the retrieved context, so the app is fully
 demoable before real credentials are wired in.
 """
 import logging
+import re
 
 import httpx
 
@@ -26,12 +27,35 @@ def _extractive_fallback(context: str, question: str) -> str:
     )
 
 
-async def generate_answer(context: str, question: str, history: list[dict] | None = None) -> tuple[str, str]:
+def _has_in_range_context_citation(answer: str, context: str) -> bool:
+    context_ids = {
+        int(match.group(1))
+        for match in re.finditer(r"(?m)^\[(\d+)\]\s", context)
+    }
+    answer_ids = {int(match.group(1)) for match in re.finditer(r"\[(\d+)\]", answer)}
+    return bool(context_ids & answer_ids)
+
+
+async def generate_answer(
+    context: str,
+    question: str,
+    history: list[dict] | None = None,
+    prepared_messages: list[dict] | None = None,
+) -> tuple[str, str]:
     """Returns (answer_text, backend_used)."""
+    if not context:
+        return NO_CONTEXT_FALLBACK, "local_fallback"
+
     if gateway_client.configured:
         try:
-            messages = build_chat_messages(context, question, history)
+            messages = (
+                prepared_messages
+                if prepared_messages is not None
+                else build_chat_messages(context, question, history)
+            )
             answer = await gateway_client.chat_completion(messages)
+            if not isinstance(answer, str) or not _has_in_range_context_citation(answer, context):
+                raise GatewayError("Key Gateway answer was not grounded with a valid context citation")
             return answer.strip(), "key_gateway"
         except (GatewayError, httpx.HTTPError) as e:
             # Belt-and-suspenders: gateway_client should already wrap HTTP

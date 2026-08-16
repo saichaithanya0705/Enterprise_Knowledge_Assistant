@@ -1,9 +1,12 @@
 import { X } from "lucide-react";
 import { Badge } from "./Badge";
 
-/** Pipeline-rail visualization of the RAG trace: a vertical connected sequence of stages. */
+/** Operator-only view of the retrieval trace behind an answer. */
 export function DebugPanel({ debug, onClose }) {
   if (!debug) return null;
+  const retrievedChunks = Array.isArray(debug.retrieved_chunks)
+    ? debug.retrieved_chunks
+    : Array.isArray(debug.retrievedChunks) ? debug.retrievedChunks : [];
 
   const stages = [
     { label: "Original query", value: debug.original_query },
@@ -14,77 +17,80 @@ export function DebugPanel({ debug, onClose }) {
     { label: "Vector store", value: "chromadb", tone: "teal" },
   ];
   return (
-    <aside className="animate-rise-in flex h-full w-full max-w-md flex-col border-l border-ink-600 bg-ink-800">
+    <aside aria-label="RAG pipeline trace" className="animate-rise-in flex h-full w-full flex-col border-l border-ink-600 bg-ink-800 shadow-card">
       <div className="flex items-center justify-between border-b border-ink-600 px-4 py-3">
-        <h3 className="font-display text-sm text-paper-100">RAG pipeline trace</h3>
-        <button onClick={onClose} className="text-paper-500 hover:text-paper-100">
-          <X size={16} />
+        <div>
+          <p className="text-[11px] font-medium text-amber-400">Operator view</p>
+          <h2 className="font-display text-sm text-paper-100">RAG pipeline trace</h2>
+        </div>
+        <button type="button" aria-label="Close RAG trace" onClick={onClose} className="flex h-9 w-9 items-center justify-center rounded-lg text-paper-500 hover:bg-ink-700 hover:text-paper-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400">
+          <X size={16} aria-hidden="true" />
         </button>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-6">
-        {/* Pipeline rail */}
+      <div className="flex-1 space-y-6 overflow-y-auto px-4 py-4">
         <ol className="relative space-y-4 border-l border-ink-600 pl-4">
-          {stages.map((s, i) => (
-            <li key={i} className="relative">
-              <span className="absolute -left-[21px] top-1 h-2 w-2 rounded-full bg-amber-500" />
-              <p className="text-[11px] uppercase tracking-wide text-paper-500">{s.label}</p>
-              <p className="mt-0.5 font-mono text-xs text-paper-100 break-words">{s.value}</p>
+          {stages.map((stage, index) => (
+            <li key={index} className="relative">
+              <span className={`absolute -left-[21px] top-1 h-2 w-2 rounded-full ${stage.tone === "teal" ? "bg-teal-500" : "bg-amber-500"}`} />
+              <p className="text-[11px] font-medium text-paper-500">{stage.label}</p>
+              <p className="mt-0.5 break-words font-mono text-xs text-paper-100">{stage.value ?? "Not available"}</p>
             </li>
           ))}
         </ol>
 
-        {/* Retrieved candidates with score breakdown */}
-        <div>
-          <p className="mb-2 text-[11px] uppercase tracking-wide text-paper-500">
-            Retrieved candidates ({debug.retrieved_chunks.length})
+        <section aria-labelledby="retrieved-candidates-heading">
+          <p id="retrieved-candidates-heading" className="mb-2 text-[11px] font-medium text-paper-500">
+            Retrieved candidates <span className="font-mono text-paper-300">({retrievedChunks.length})</span>
           </p>
           <div className="space-y-2">
-            {debug.retrieved_chunks.map((c) => (
+            {retrievedChunks.map((chunk) => (
               <div
-                key={c.chunk_id}
+                key={chunk.chunk_id || chunk.id || `${chunk.filename}-${chunk.section || "chunk"}`}
                 className={`rounded-lg border px-3 py-2 ${
-                  c.used_in_context ? "border-amber-500/40 bg-amber-500/5" : "border-ink-600 bg-ink-700/30"
+                  chunk.used_in_context ? "border-amber-500/40 bg-amber-500/5" : "border-ink-600 bg-ink-700/30"
                 }`}
               >
                 <div className="flex items-center justify-between gap-2">
-                  <span className="truncate text-xs text-paper-100">{c.filename}{c.section ? ` — ${c.section}` : ""}</span>
-                  {c.used_in_context && <Badge tone="amber">used</Badge>}
+                  <span className="truncate text-xs text-paper-100">{chunk.filename || "Unknown source"}{chunk.section ? ` / ${chunk.section}` : ""}</span>
+                  {chunk.used_in_context && <Badge tone="amber">used</Badge>}
                 </div>
-                <div className="mt-1.5 grid grid-cols-3 gap-2 font-mono text-[10px] text-paper-500">
-                  <ScoreBar label="BM25" value={c.bm25_score} />
-                  <ScoreBar label="Vector" value={c.vector_score} />
-                  <ScoreBar label="Rerank" value={c.fused_score} />
+                <div className="mt-2 grid grid-cols-4 gap-2 font-mono text-[10px] text-paper-500">
+                  <ScoreValue label="BM25" value={chunk.bm25_score} />
+                  <ScoreValue label="Vector" value={chunk.vector_score} />
+                  <ScoreValue label="RRF fused" value={chunk.fused_score} />
+                  <ScoreValue label="Final rerank" value={chunk.rerank_score} />
                 </div>
               </div>
             ))}
           </div>
-        </div>
+        </section>
 
-        <div>
-          <p className="mb-2 text-[11px] uppercase tracking-wide text-paper-500">Final prompt context (preview)</p>
-          <pre className="whitespace-pre-wrap rounded-lg border border-ink-600 bg-ink-950 p-3 font-mono text-[11px] leading-relaxed text-paper-300">
-            {debug.prompt_preview}
+        <section aria-labelledby="prompt-preview-heading">
+          <p id="prompt-preview-heading" className="mb-2 text-[11px] font-medium text-paper-500">Final prompt context</p>
+          <pre className="max-h-64 overflow-auto whitespace-pre-wrap rounded-lg border border-ink-600 bg-ink-950 p-3 font-mono text-[11px] leading-relaxed text-paper-300">
+            {debug.prompt_preview || "No prompt preview available"}
           </pre>
-        </div>
+        </section>
 
-        <div className="flex items-center gap-2">
-          <span className="text-[11px] uppercase tracking-wide text-paper-500">LLM backend</span>
-          <Badge tone={debug.llm_backend === "key_gateway" ? "teal" : "amber"}>{debug.llm_backend}</Badge>
+        <div className="flex items-center justify-between gap-2 rounded-lg border border-ink-600 bg-ink-900/60 px-3 py-2">
+          <span className="text-[11px] font-medium text-paper-500">LLM backend</span>
+          <Badge tone={debug.llm_backend === "key_gateway" ? "teal" : "amber"}>{debug.llm_backend || "Not available"}</Badge>
         </div>
       </div>
     </aside>
   );
 }
 
-function ScoreBar({ label, value }) {
-  const pct = Math.max(0, Math.min(1, value)) * 100;
+function ScoreValue({ label, value }) {
+  const parsedValue = value === null || value === undefined || value === ""
+    ? null
+    : typeof value === "number" ? value : Number(value);
+  const displayValue = Number.isFinite(parsedValue) ? parsedValue.toFixed(2) : "Not available";
   return (
-    <div>
-      <div className="flex justify-between"><span>{label}</span><span>{value.toFixed(2)}</span></div>
-      <div className="mt-0.5 h-1 w-full overflow-hidden rounded-full bg-ink-600">
-        <div className="h-full rounded-full bg-teal-500" style={{ width: `${pct}%` }} />
-      </div>
+    <div className="min-w-0">
+      <p className="truncate">{label}</p>
+      <p className="mt-0.5 text-paper-300">{displayValue}</p>
     </div>
   );
 }

@@ -3,6 +3,7 @@ Turns raw retrieved chunks into a clean, LLM-ready context: reranking,
 relevance filtering, deduplication, and size limiting.
 """
 import logging
+import math
 import re
 from dataclasses import dataclass
 
@@ -21,6 +22,14 @@ settings = get_settings()
 class ContextChunk:
     retrieved: RetrievedChunk
     rerank_score: float
+
+
+def _stable_sigmoid(logit: float) -> float:
+    if logit >= 0:
+        scale = math.exp(-logit)
+        return 1.0 / (1.0 + scale)
+    scale = math.exp(logit)
+    return scale / (1.0 + scale)
 
 
 def _term_overlap_boost(query: str, content: str) -> float:
@@ -83,12 +92,12 @@ async def rerank(query: str, retrieved: list[RetrievedChunk]) -> tuple[list[Cont
         try:
             passages = [r.chunk.content for r in retrieved]
             scores = await nvidia_client.rerank(query, passages)
-            # NVIDIA logits aren't bounded 0-1 - squash with a sigmoid so they
-            # compose sensibly with the threshold/dedup logic below.
-            def sigmoid(x: float) -> float:
-                return 1.0 / (1.0 + pow(2.718281828, -x))
-
-            scored = [ContextChunk(retrieved=r, rerank_score=sigmoid(s)) for r, s in zip(retrieved, scores)]
+            # NVIDIA logits aren't bounded 0-1 - squash with a stable sigmoid so
+            # extreme finite logits cannot overflow.
+            scored = [
+                ContextChunk(retrieved=r, rerank_score=_stable_sigmoid(s))
+                for r, s in zip(retrieved, scores)
+            ]
             return sorted(scored, key=lambda c: c.rerank_score, reverse=True), "nvidia"
         except (NvidiaApiError, httpx.HTTPError) as e:
             # Don't let a reranker outage/misconfiguration (e.g. a bad or

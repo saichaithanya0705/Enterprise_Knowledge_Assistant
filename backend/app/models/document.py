@@ -47,3 +47,21 @@ class DocumentChunk(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
     document: Mapped["Document"] = relationship(back_populates="chunks")
+
+
+class VectorCleanupTask(Base):
+    """Durable, idempotent work item for vector-store cleanup failures."""
+
+    __tablename__ = "vector_cleanup_tasks"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uid)
+    operation_key: Mapped[str] = mapped_column(String(255), nullable=False, unique=True, index=True)
+    operation: Mapped[str] = mapped_column(String(40), nullable=False)
+    document_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    chunk_ids_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    backend: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    last_attempt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, onupdate=_now)

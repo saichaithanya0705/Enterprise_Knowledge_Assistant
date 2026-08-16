@@ -6,17 +6,40 @@ Credentials come only from environment variables and are never exposed to the
 frontend. Retries transient failures with backoff.
 """
 import httpx
-from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
+from tenacity import retry, retry_if_exception, stop_after_attempt, wait_exponential
 
 from app.core.config import get_settings
 
 settings = get_settings()
 
-_RETRYABLE = (httpx.TransportError, httpx.HTTPStatusError)
-
-
 class GatewayError(Exception):
     pass
+
+
+def _is_retryable(exc: BaseException) -> bool:
+    if isinstance(exc, httpx.TransportError):
+        return True
+    if isinstance(exc, httpx.HTTPStatusError):
+        response = exc.response
+        if response is None:
+            return False
+        return response.status_code == 429 or 500 <= response.status_code < 600
+    return False
+
+
+def _extract_content(payload: object) -> str:
+    if not isinstance(payload, dict):
+        raise GatewayError("Key Gateway returned a non-object payload")
+    choices = payload.get("choices")
+    if not isinstance(choices, list) or not choices or not isinstance(choices[0], dict):
+        raise GatewayError("Key Gateway response did not contain choices")
+    message = choices[0].get("message")
+    if not isinstance(message, dict):
+        raise GatewayError("Key Gateway response did not contain a message")
+    content = message.get("content")
+    if not isinstance(content, str) or not content.strip():
+        raise GatewayError("Key Gateway response did not contain string content")
+    return content
 
 
 class GatewayClient:
@@ -53,12 +76,23 @@ class GatewayClient:
                 ordered.append(candidate)
         return ordered
 
-    @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=0.5, min=0.5, max=4),
-           retry=retry_if_exception_type(_RETRYABLE), reraise=True)
     async def chat_completion(self, messages: list[dict], temperature: float = 0.2) -> str:
         if not self.configured:
             raise GatewayError("Key Gateway is not configured")
 
+        try:
+            return await self._chat_completion_with_retries(messages, temperature)
+        except GatewayError:
+            raise
+        except httpx.HTTPError as exc:
+            raise GatewayError(f"Key Gateway request failed after retries: {exc}") from exc
+
+    @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=0.5, min=0.5, max=4),
+           retry=retry_if_exception(_is_retryable), reraise=True)
+    async def _chat_completion_with_retries(self, messages: list[dict], temperature: float) -> str:
+        return await self._chat_completion_attempt(messages, temperature)
+
+    async def _chat_completion_attempt(self, messages: list[dict], temperature: float) -> str:
         last_error: Exception | None = None
         async with httpx.AsyncClient(timeout=30) as client:
             for url in self._candidate_urls():
@@ -68,25 +102,17 @@ class GatewayClient:
                         headers=self._headers(),
                         json={"model": settings.key_gateway_chat_model, "messages": messages, "temperature": temperature},
                     )
-                    if resp.status_code == 404:
-                        last_error = httpx.HTTPStatusError(
-                            f"404 Client Error: Not Found for url: {url}",
-                            request=resp.request,
-                            response=resp,
-                        )
-                        continue
                     resp.raise_for_status()
-                    return resp.json()["choices"][0]["message"]["content"]
+                    try:
+                        payload = resp.json()
+                    except (TypeError, ValueError) as exc:
+                        raise GatewayError("Key Gateway returned invalid JSON") from exc
+                    return _extract_content(payload)
                 except httpx.HTTPStatusError as exc:
-                    last_error = exc
                     if exc.response is not None and exc.response.status_code in {404, 405}:
+                        last_error = exc
                         continue
-                    # Any other HTTP error (401/403/429/5xx) must surface as
-                    # GatewayError, not a raw httpx exception - the caller
-                    # (llm_service.generate_answer) only catches GatewayError
-                    # to trigger its extractive fallback; a bare re-raise here
-                    # skips that fallback and crashes the whole chat request.
-                    raise GatewayError(f"Key Gateway request failed: {exc}") from exc
+                    raise
 
         if last_error is not None:
             raise GatewayError(f"Key Gateway request failed: {last_error}")

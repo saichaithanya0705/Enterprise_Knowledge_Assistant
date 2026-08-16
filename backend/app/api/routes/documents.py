@@ -1,14 +1,18 @@
 """Document upload, listing, and deletion endpoints."""
+import logging
+from pathlib import Path
+
 from fastapi import APIRouter, Depends, UploadFile, File, Form, HTTPException
 from sqlalchemy.orm import Session
 
 from app.db.database import get_db
 from app.repositories import document_repo
 from app.services.document_service import ingest_document
-from app.schemas.document import DocumentOut, ChunkPreview
+from app.schemas.document import DocumentCategory, DocumentOut, ChunkPreview
 from app.rag.loaders import UnsupportedFileType
 
 router = APIRouter(prefix="/api/documents", tags=["documents"])
+logger = logging.getLogger(__name__)
 
 ALLOWED_EXTENSIONS = {"pdf", "docx", "txt", "md"}
 MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
@@ -21,7 +25,7 @@ def list_documents(db: Session = Depends(get_db)):
 
 @router.post("", response_model=DocumentOut, status_code=201)
 async def upload_document(
-    file: UploadFile = File(...), category: str = Form("General"), db: Session = Depends(get_db)
+    file: UploadFile = File(...), category: DocumentCategory = Form("General"), db: Session = Depends(get_db)
 ):
     ext = file.filename.split(".")[-1].lower()
     if ext not in ALLOWED_EXTENSIONS:
@@ -33,10 +37,15 @@ async def upload_document(
 
     try:
         doc = await ingest_document(db, file.filename, raw, category)
-    except UnsupportedFileType as e:
-        raise HTTPException(400, str(e))
-    except Exception as e:  # noqa: BLE001
-        raise HTTPException(422, f"Could not process document: {e}")
+    except UnsupportedFileType:
+        raise HTTPException(400, "Unsupported file type.")
+    except Exception as error:  # noqa: BLE001 - do not expose ingestion internals
+        logger.warning(
+            "Document ingestion failed filename=%s error_type=%s",
+            Path(file.filename).name[:128],
+            type(error).__name__,
+        )
+        raise HTTPException(422, "Could not process document.")
 
     return doc
 
