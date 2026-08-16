@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { ToastStack } from "../components/Toast";
 import { ToastCtx } from "./toastContextValue";
 
@@ -14,8 +14,10 @@ export function ToastProvider({ children }) {
     setToasts((t) => t.filter((x) => x.id !== id));
   }, []);
 
+  const contextValue = useMemo(() => ({ push }), [push]);
+
   return (
-    <ToastCtx.Provider value={{ push }}>
+    <ToastCtx.Provider value={contextValue}>
       {children}
       <ToastStack toasts={toasts} onDismiss={dismiss} />
     </ToastCtx.Provider>

@@ -507,9 +507,14 @@ async def test_chat_trace_preserves_context_order_and_complete_prompt(monkeypatc
     )
     conversation = SimpleNamespace(id="conversation", messages=[SimpleNamespace(role="user", content="Earlier question")])
     assistant_message = SimpleNamespace(id="assistant-message")
+    db = SimpleNamespace(rollback=lambda: None)
 
     monkeypatch.setattr(chat_service.conversation_repo, "get_or_create_conversation", lambda *args, **kwargs: conversation)
-    monkeypatch.setattr(chat_service.conversation_repo, "add_message", lambda *args, **kwargs: assistant_message)
+    monkeypatch.setattr(
+        chat_service.conversation_repo,
+        "add_turn",
+        lambda *args, **kwargs: (conversation, assistant_message),
+    )
     monkeypatch.setattr(chat_service.document_repo, "list_ready_chunks", lambda db: [first_chunk, second_chunk])
 
     async def improve(query):
@@ -532,7 +537,7 @@ async def test_chat_trace_preserves_context_order_and_complete_prompt(monkeypatc
 
     monkeypatch.setattr(chat_service, "generate_answer", answer)
 
-    _, _, _, sources, debug, grounded = await chat_service.answer_question(None, None, "What is the policy?")
+    _, _, _, sources, debug, grounded = await chat_service.answer_question(db, None, "What is the policy?")
 
     assert grounded is True
     assert [source["chunk_id"] for source in sources] == ["first", "second"]

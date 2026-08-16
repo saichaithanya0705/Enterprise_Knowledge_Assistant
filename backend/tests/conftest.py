@@ -1,9 +1,19 @@
 """Shared pytest fixtures: an isolated SQLite DB + Chroma dir per test."""
+import os
 import shutil
 import tempfile
 
 import pytest
 from fastapi.testclient import TestClient
+
+
+# Test modules import application settings during collection, before fixtures
+# run. Explicit process values take precedence over a developer's local .env
+# and keep the default suite deterministic and offline. Provider-specific tests
+# opt in by monkeypatching their module settings.
+os.environ["KEY_GATEWAY_URL"] = ""
+os.environ["KEY_GATEWAY_API_KEY"] = ""
+os.environ["NVIDIA_API_KEY"] = ""
 
 
 @pytest.fixture(scope="function")

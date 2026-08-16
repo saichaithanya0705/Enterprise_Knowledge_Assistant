@@ -37,16 +37,6 @@ def get_or_create_conversation(db: Session, conversation_id: str | None, title_h
     return Conversation(title=title or "New conversation")
 
 
-def add_message(
-    db: Session, conversation_id: str, role: str, content: str, sources: list | None = None, debug_trace: dict | None = None
-) -> Message:
-    msg = Message(conversation_id=conversation_id, role=role, content=content, sources=sources, debug_trace=debug_trace)
-    db.add(msg)
-    db.commit()
-    db.refresh(msg)
-    return msg
-
-
 def add_turn(
     db: Session,
     conversation: Conversation,
@@ -56,14 +46,6 @@ def add_turn(
     debug_trace: dict | None = None,
 ) -> tuple[Conversation, Message]:
     """Persist a user/assistant turn in one transaction after generation succeeds."""
-    # The None-session branch keeps the existing unit-level orchestration test
-    # injectable; application requests always provide a real SQLAlchemy session.
-    if db is None:
-        assistant = add_message(
-            db, conversation.id, "assistant", answer, sources=sources, debug_trace=debug_trace
-        )
-        return conversation, assistant
-
     try:
         if conversation.id:
             persisted = get_conversation(db, conversation.id)

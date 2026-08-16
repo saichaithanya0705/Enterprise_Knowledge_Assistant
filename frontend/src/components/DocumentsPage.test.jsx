@@ -31,6 +31,7 @@ test("keeps document expand and delete controls as sibling buttons", async () =>
   renderPage();
 
   await screen.findByText("Leave policy.pdf");
+  expect(mocks.list).toHaveBeenCalledTimes(1);
   const expand = screen.getByRole("button", { name: "Show chunks for Leave policy.pdf" });
   const deleteButton = screen.getByRole("button", { name: "Delete Leave policy.pdf" });
 

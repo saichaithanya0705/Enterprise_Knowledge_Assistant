@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Plus, FileText, Trash2, ChevronRight, CheckCircle2, XCircle, Loader2, Search, RefreshCw } from "lucide-react";
 import { documentService } from "../services/documentService";
 import { UploadModal } from "../components/UploadModal";
@@ -30,7 +30,7 @@ export function DocumentsPage() {
   const [status, setStatus] = useState("all");
   const toast = useToast();
 
-  const load = async () => {
+  const loadDocuments = useCallback(async ({ reportError = false } = {}) => {
     setLoading(true);
     setLoadError(null);
     try {
@@ -38,18 +38,20 @@ export function DocumentsPage() {
     } catch (e) {
       const message = e.message || "Unable to load documents";
       setLoadError(message);
-      if (docs !== null) toast.push(message, "error");
+      if (reportError) toast.push(message, "error");
     } finally {
       setLoading(false);
     }
-  };
+  }, [toast]);
 
-  useEffect(() => { load(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    void loadDocuments();
+  }, [loadDocuments]);
 
   const handleUpload = async (file, selectedCategory) => {
     await documentService.upload(file, selectedCategory);
     toast.push(`${file.name} ingested successfully`);
-    await load();
+    await loadDocuments({ reportError: true });
   };
 
   const confirmDelete = async (doc) => {
@@ -57,7 +59,7 @@ export function DocumentsPage() {
       await documentService.remove(doc.id);
       toast.push(`${doc.filename} removed`);
       setPendingDelete(null);
-      await load();
+      await loadDocuments({ reportError: true });
     } catch (e) {
       toast.push(e.message || "Unable to remove document", "error");
     }
@@ -137,7 +139,7 @@ export function DocumentsPage() {
           <button
             type="button"
             aria-label="Refresh documents"
-            onClick={load}
+            onClick={() => loadDocuments({ reportError: true })}
             disabled={loading}
             className="flex min-h-10 items-center justify-center gap-2 rounded-lg border border-ink-600 px-3 text-sm text-paper-300 transition-colors hover:bg-ink-700 hover:text-paper-100 disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400"
           >
@@ -166,7 +168,7 @@ export function DocumentsPage() {
           <div role="alert" className="rounded-xl border border-coral-500/40 bg-coral-500/10 p-4">
             <p className="text-sm font-medium text-paper-100">Documents could not be loaded</p>
             <p className="mt-1 text-xs text-paper-300">{loadError}</p>
-            <button type="button" onClick={load} className="mt-3 min-h-9 rounded-lg bg-coral-500 px-3 text-xs font-semibold text-ink-950 hover:bg-coral-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-coral-400">Retry loading documents</button>
+            <button type="button" onClick={() => loadDocuments({ reportError: true })} className="mt-3 min-h-9 rounded-lg bg-coral-500 px-3 text-xs font-semibold text-ink-950 hover:bg-coral-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-coral-400">Retry loading documents</button>
           </div>
         )}
 
