@@ -7,21 +7,57 @@ html, body, #root {
 }
 
 body {
-  @apply bg-ink-900 text-paper-100 font-sans antialiased;
+  @apply bg-canvas-100 text-carbon-950 font-sans antialiased;
+  background-image:
+    radial-gradient(circle at 8% 12%, rgba(200, 79, 53, 0.055), transparent 28rem),
+    radial-gradient(circle at 92% 82%, rgba(93, 120, 99, 0.055), transparent 24rem);
+}
+
+button,
+a,
+input,
+textarea,
+select {
+  -webkit-tap-highlight-color: transparent;
+}
+
+:focus-visible {
+  outline: 2px solid #C84F35;
+  outline-offset: 2px;
 }
 
 ::selection {
-  background: #E8A33D55;
+  background: #C84F3538;
 }
 
-/* thin, quiet scrollbars that fit the ink palette */
+/* Thin scrollbars styled like the rules of a printed index. */
 * {
   scrollbar-width: thin;
-  scrollbar-color: #2A3348 transparent;
+  scrollbar-color: #B8AE9E transparent;
 }
 *::-webkit-scrollbar { width: 8px; height: 8px; }
-*::-webkit-scrollbar-thumb { background: #2A3348; border-radius: 8px; }
+*::-webkit-scrollbar-thumb { background: #B8AE9E; border-radius: 0; }
 *::-webkit-scrollbar-track { background: transparent; }
+
+.editorial-grid {
+  background-image:
+    linear-gradient(rgba(27, 30, 24, 0.045) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(27, 30, 24, 0.035) 1px, transparent 1px);
+  background-size: 100% 3rem, 3rem 100%;
+}
+
+.paper-noise::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.16;
+  mix-blend-mode: multiply;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 180 180' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.12'/%3E%3C/svg%3E");
+}
+
+.text-balance { text-wrap: balance; }
+.text-pretty { text-wrap: pretty; }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
@@ -32,10 +68,16 @@ body {
 }
 
 @keyframes rise-in {
-  from { opacity: 0; transform: translateY(6px); }
+  from { opacity: 0; transform: translateY(10px); }
   to { opacity: 1; transform: translateY(0); }
 }
-.animate-rise-in { animation: rise-in 0.28s ease-out both; }
+.animate-rise-in { animation: rise-in 0.42s cubic-bezier(.22,.8,.28,1) both; }
+
+@keyframes reveal-rule {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
+}
+.animate-reveal-rule { transform-origin: left; animation: reveal-rule 0.7s cubic-bezier(.22,.8,.28,1) both; }
 
 @keyframes pulse-dot {
   0%, 80%, 100% { opacity: 0.25; transform: scale(0.8); }

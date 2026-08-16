@@ -327,7 +327,7 @@ def test_upload_category_is_a_closed_set(client):
     assert response.status_code == 422
 
 
-def test_sqlite_foreign_keys_are_enabled_and_conversation_delete_cascades_feedback(client):
+def test_soft_delete_preserves_history_and_admin_hard_delete_cascades_feedback(client):
     from sqlalchemy import text
 
     from app.db.database import SessionLocal
@@ -350,6 +350,17 @@ def test_sqlite_foreign_keys_are_enabled_and_conversation_delete_cascades_feedba
         db.close()
 
     assert client.delete(f"/api/conversations/{body['conversation_id']}").status_code == 204
+
+    db = SessionLocal()
+    try:
+        assert db.query(Message).count() == 2
+        assert db.query(Feedback).count() == 1
+    finally:
+        db.close()
+
+    assert client.delete(
+        f"/api/admin/conversations/{body['conversation_id']}/permanent"
+    ).status_code == 204
 
     db = SessionLocal()
     try:

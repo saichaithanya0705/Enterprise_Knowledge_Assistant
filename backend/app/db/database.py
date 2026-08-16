@@ -51,10 +51,43 @@ def get_db():
 
 def init_db():
     _ensure_initialized()
-    from app.models import document, conversation  # noqa: F401 - register models on Base.metadata
+    from app.models import audit, conversation, document, user  # noqa: F401 - register models
     Base.metadata.create_all(bind=_engine)
     if _engine.dialect.name == "sqlite":
+        _migrate_sqlite_identity_columns()
         _migrate_sqlite_feedback_uniqueness()
+
+
+def _migrate_sqlite_identity_columns():
+    """Add identity/recovery columns to existing local SQLite databases.
+
+    SQLite cannot add foreign-key constraints with ALTER TABLE, so upgraded
+    databases keep these new columns nullable. Fresh databases receive the
+    complete ORM constraints from ``create_all``. Existing rows are preserved
+    as unowned legacy data and remain visible to administrators only.
+    """
+    additions = {
+        "conversations": {
+            "user_id": "VARCHAR(36)",
+            "is_deleted": "BOOLEAN NOT NULL DEFAULT 0",
+            "deleted_at": "DATETIME",
+            "deleted_by": "VARCHAR(36)",
+        },
+        "documents": {"uploaded_by": "VARCHAR(36)"},
+    }
+    with _engine.begin() as connection:
+        for table, columns in additions.items():
+            existing = {
+                row[1] for row in connection.exec_driver_sql(f"PRAGMA table_info('{table}')").fetchall()
+            }
+            for name, definition in columns.items():
+                if name not in existing:
+                    connection.exec_driver_sql(
+                        f'ALTER TABLE "{table}" ADD COLUMN "{name}" {definition}'
+                    )
+        connection.exec_driver_sql(
+            "CREATE INDEX IF NOT EXISTS ix_conversations_user_id ON conversations (user_id)"
+        )
 
 
 def _migrate_sqlite_feedback_uniqueness():

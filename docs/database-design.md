@@ -13,6 +13,7 @@ SQLite via SQLAlchemy. Vectors are NOT stored here — see `docs/architecture.md
 | char_count | int | |
 | chunk_count | int | |
 | error_message | text, nullable | set when ingestion fails |
+| uploaded_by | string, nullable | FK → users.id; legacy rows remain unowned |
 | created_at | datetime | |
 
 ## document_chunks
@@ -26,11 +27,15 @@ SQLite via SQLAlchemy. Vectors are NOT stored here — see `docs/architecture.md
 | created_at | datetime | |
 
 ## conversations
-| column | type |
-|---|---|
-| id | string (uuid) PK |
-| title | string (derived from first message) |
-| created_at | datetime |
+| column | type | notes |
+|---|---|---|
+| id | string (uuid) | PK |
+| user_id | string, nullable | FK → users.id; ownership boundary |
+| title | string | derived from first message |
+| created_at | datetime | |
+| is_deleted | bool | user deletion is reversible |
+| deleted_at | datetime, nullable | |
+| deleted_by | string, nullable | FK → users.id |
 
 ## messages
 | column | type | notes |
@@ -51,3 +56,17 @@ SQLite via SQLAlchemy. Vectors are NOT stored here — see `docs/architecture.md
 | rating | int (1 or -1) |
 | comment | text, nullable |
 | created_at | datetime |
+
+## users
+| column | type | notes |
+|---|---|---|
+| id | string (uuid) | PK |
+| name / email | string | email is normalized and unique |
+| password_hash | string | bcrypt hash; never serialized |
+| role | string | USER / ADMIN |
+| is_active | bool | inactive accounts are denied at the auth dependency |
+| created_at / last_login_at | datetime | |
+
+## restore_requests / audit_logs
+
+Restore requests connect a deleted conversation, requester, reason, decision, resolver, and timestamps. Audit logs record actor identity, action, target, status, bounded metadata, and creation time for authentication and administrative events.

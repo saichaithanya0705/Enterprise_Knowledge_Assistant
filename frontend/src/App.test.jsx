@@ -14,6 +14,18 @@ vi.mock("./services/chatService", () => ({
   },
 }));
 vi.mock("./services/systemService", () => ({ systemService: { status: mocks.status } }));
+vi.mock("./context/AuthContext", () => ({
+  AuthProvider: ({ children }) => children,
+}));
+vi.mock("./context/useAuth", () => ({
+  useAuth: () => ({
+    user: { id: "user-1", name: "Test User", role: "USER", is_active: true },
+    loading: false,
+    isAuthenticated: true,
+    isAdmin: false,
+    signOut: vi.fn(),
+  }),
+}));
 
 beforeEach(() => {
   vi.clearAllMocks();

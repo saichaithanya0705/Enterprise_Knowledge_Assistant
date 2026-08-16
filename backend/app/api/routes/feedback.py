@@ -4,7 +4,9 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
+from app.api.dependencies.auth import get_current_user
 from app.db.database import get_db
+from app.models.user import User
 from app.schemas.feedback import FeedbackRequest
 from app.repositories import conversation_repo
 from app.repositories.conversation_repo import (
@@ -19,9 +21,19 @@ logger = logging.getLogger(__name__)
 
 
 @router.post("", status_code=201)
-def submit_feedback(payload: FeedbackRequest, db: Session = Depends(get_db)):
+def submit_feedback(
+    payload: FeedbackRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     try:
-        fb = conversation_repo.add_feedback(db, payload.message_id, payload.rating, payload.comment)
+        fb = conversation_repo.add_feedback(
+            db,
+            payload.message_id,
+            payload.rating,
+            payload.comment,
+            user_id=current_user.id,
+        )
     except MessageNotFoundError:
         raise HTTPException(404, "Message not found")
     except InvalidFeedbackMessageError:

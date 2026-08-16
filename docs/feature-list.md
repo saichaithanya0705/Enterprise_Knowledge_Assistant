@@ -22,6 +22,11 @@
 - [x] Category tagging (HR / IT / Finance / General)
 - [x] Transparent local-fallback mode for every AI stage — fully demoable with zero API keys
 - [x] Automated tests for chunking, retrieval fusion, API contracts, and frontend race/accessibility behavior
+- [x] JWT registration/login with database-backed USER/ADMIN authorization
+- [x] Owner-scoped conversations and feedback; foreign resource IDs return 404 without creating replacements
+- [x] Soft deletion, user restore requests, admin approval/rejection, and admin-only permanent deletion
+- [x] Admin control room for users, documents, conversations, persisted RAG traces, audit logs, and real analytics
+- [x] Profile/password management and environment-driven bootstrap-admin provisioning
 
 ## Index lifecycle
 

@@ -8,7 +8,7 @@ Employees waste time hunting through scattered HR policies, IT procedures, and h
 
 ## Solution
 
-A full-stack app: employees upload policy documents once, then ask questions in a chat interface. Every answer shows exactly which document and section it came from, and a developer/debug view exposes the entire retrieval pipeline for a technical audience.
+A full-stack app with authenticated employee workspaces and an admin control room. Administrators manage policy documents, users ask questions in private conversation histories, and every answer identifies its source while full retrieval traces remain restricted to administrators.
 
 ## Features
 
@@ -17,10 +17,13 @@ A full-stack app: employees upload policy documents once, then ask questions in 
 - Second-stage reranking via NVIDIA's cross-encoder reranking model
 - Vector storage and semantic search via **ChromaDB**
 - Grounded generation via a **Key Gateway** chat model (OpenAI-compatible), with inline `[1]` citations
-- Source cards on every answer — expandable to see the exact excerpt used
+- Source cards on grounded answers; raw excerpts are retained for admin trace inspection rather than exposed to normal users
 - Multi-turn conversation memory, per-conversation, persisted in SQLite
-- A full RAG debug/trace panel: original query → improved query → every retrieved candidate with separate BM25, vector, RRF-fused, and final-rerank scores → final context → bounded prompt preview → which backend answered
+- An admin-only RAG debug/trace panel: original query → improved query → every retrieved candidate with separate BM25, vector, RRF-fused, and final-rerank scores → final context → bounded prompt preview → which backend answered
 - Feedback (thumbs up/down) on any answer
+- JWT authentication with database-backed USER/ADMIN authorization and cross-user conversation isolation
+- Soft-deleted conversations, user restore requests, explicit admin approval, and permanent deletion reserved for admins
+- Admin user controls, document governance, conversation trace inspection, real usage counts, and a durable audit log
 - **Works with zero external credentials**: every AI stage (chat, embeddings, reranking) has a transparent local fallback, so the whole pipeline is demoable before either API key exists
 
 ## Additional Features (beyond the brief)
@@ -46,7 +49,7 @@ A full-stack app: employees upload policy documents once, then ask questions in 
 React Frontend
       │  REST (fetch)
       ▼
-FastAPI Routes  (documents / chat / conversations / feedback / system)
+FastAPI Routes  (auth / admin / documents / chat / conversations / feedback / system)
       │
       ▼
 Service Layer  (document_service, chat_service)
@@ -81,7 +84,7 @@ Repositories (SQLite)         RAG Pipeline
 4. **Rerank** — NVIDIA's `nv-rerankqa-mistral-4b-v3` cross-encoder scores each candidate against the actual query (a real second-stage reranker, not just re-sorting the fusion score)
 5. **Context build** — relevance threshold filter, near-duplicate removal, limited to the top N chunks
 6. **Generate** — context + conversation history + question assembled via a dedicated prompt template, sent to your Key Gateway's chat model, instructed to answer only from context and cite sources inline
-7. **Respond** — answer + source cards (document, section, similarity, excerpt) + full debug trace
+7. **Respond** — users receive the answer plus safe source metadata; admins can inspect excerpts and the full persisted debug trace
 
 ### Local fallback mode (no credentials configured)
 
@@ -103,7 +106,7 @@ eka/
 ├── backend/
 │   ├── app/
 │   │   ├── main.py
-│   │   ├── api/routes/        # documents, chat, conversations, feedback, system
+│   │   ├── api/routes/        # auth, admin, documents, chat, conversations, feedback, system
 │   │   ├── core/config.py     # env-driven settings
 │   │   ├── models/            # SQLAlchemy models
 │   │   ├── schemas/           # Pydantic request/response schemas
@@ -125,7 +128,7 @@ eka/
 └── frontend/
     ├── src/
     │   ├── components/         # Sidebar, MessageBubble, SourceCard, DebugPanel, ...
-    │   ├── pages/               # ChatPage, DocumentsPage
+    │   ├── pages/               # authenticated user, admin, chat, and document pages
     │   ├── services/            # apiClient, documentService, chatService
     │   └── context/               # ToastProvider, useToast, and context value
     └── tailwind.config.js
@@ -133,14 +136,22 @@ eka/
 
 ## Database Design
 
-- `documents` — filename, type, category, status, char/chunk counts
+- `users` — normalized account identity, password hash, role, active state, and login timestamps
+- `documents` — filename, type, category, status, char/chunk counts, and uploader
 - `document_chunks` — text + section + chunk_index (vectors live in ChromaDB, keyed by this row's id)
-- `conversations` / `messages` — per-conversation history, with sources + full debug trace stored per assistant message
+- `conversations` / `messages` — owner-scoped history with soft-delete state, sources, and admin-only debug traces
 - `feedback` — thumbs up/down per message
+- `restore_requests` / `audit_logs` — attributable recovery workflow and security/admin actions
 
 ## API Endpoints
 
 ```
+POST   /api/auth/register
+POST   /api/auth/login
+GET    /api/auth/me
+PATCH  /api/auth/me
+POST   /api/auth/change-password
+
 GET    /api/documents
 POST   /api/documents                 (multipart: file, category)
 GET    /api/documents/{id}/chunks
@@ -150,11 +161,22 @@ POST   /api/chat                      { message, conversation_id? }
 GET    /api/conversations
 GET    /api/conversations/{id}/messages
 DELETE /api/conversations/{id}
+GET    /api/conversations/deleted
+POST   /api/conversations/{id}/restore-requests
+GET    /api/conversations/restore-requests/mine
 
 POST   /api/feedback                  { message_id, rating, comment? }
 
 GET    /api/system/status             configuration + index lifecycle state (not live health)
+
+GET/PATCH /api/admin/users...
+GET       /api/admin/conversations...
+GET/POST  /api/admin/restore-requests...
+GET       /api/admin/audit-logs
+GET       /api/admin/analytics/overview
 ```
+
+All endpoints except registration, login, and the service root require a Bearer token. Document and `/api/admin/*` endpoints require the `ADMIN` role.
 
 ## Environment Variables
 
@@ -175,6 +197,10 @@ NVIDIA_RERANK_MODEL=nvidia/nv-rerankqa-mistral-4b-v3
 
 DATABASE_URL=sqlite:///./data/knowledge_assistant.db
 CHROMA_PERSIST_DIR=./data/chroma
+APP_ENVIRONMENT=development
+JWT_SECRET_KEY=<random 64-character hex value>
+BOOTSTRAP_ADMIN_EMAIL=
+BOOTSTRAP_ADMIN_PASSWORD=
 ```
 
 Copy `backend/.env.example` to `backend/.env`, then fill in your actual Key Gateway URL/API key and NVIDIA API key. Keep `backend/.env` local and uncommitted; it is listed in `.gitignore`.
@@ -189,8 +215,9 @@ Frontend: copy `frontend/.env.example` to `frontend/.env`, then set `VITE_API_UR
 cd backend
 python -m venv venv && source venv/bin/activate   # optional but recommended
 pip install -r requirements.txt
-# edit .env and fill in KEY_GATEWAY_URL / KEY_GATEWAY_API_KEY / NVIDIA_API_KEY
-python seed.py                                       # ingests the sample HR/IT/Finance docs
+# edit .env; set JWT_SECRET_KEY and optional provider credentials
+# set BOOTSTRAP_ADMIN_EMAIL/PASSWORD for the first admin before seeding
+python seed.py                                       # creates the explicit bootstrap admin and ingests sample docs
 uvicorn app.main:app --reload --port 8000
 ```
 
@@ -241,7 +268,7 @@ User Question
 
 - Local fallback embeddings (hashing-based) are not semantically meaningful — they exist only so the app is demoable before a real NVIDIA key is added. Retrieval quality is materially better once NVIDIA embeddings are live.
 - The NVIDIA reranking request/response shape in `nvidia_client.py` was built from documentation, not verified against live traffic (no key was available during development) — worth a smoke test once your key is in.
-- No authentication/authorization layer — this is a single-tenant demo; a real deployment would need user accounts and per-department document access control.
+- Authorization is role-based at the application level; document access is currently global to administrators rather than department-scoped.
 - Reranking and embeddings add API latency; there's no caching layer yet for repeated queries.
 - Ingestion is synchronous (upload blocks until fully chunked + embedded); fine for demo-sized documents, but a production system would background this for large files.
 

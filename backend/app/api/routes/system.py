@@ -2,8 +2,10 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
+from app.api.dependencies.auth import get_current_user, require_admin
 from app.core.config import get_settings
 from app.db.database import get_db
+from app.models.user import User
 from app.rag import vector_store
 from app.repositories import document_repo
 from app.services.document_service import reconcile_cleanup_tasks
@@ -13,7 +15,10 @@ settings = get_settings()
 
 
 @router.get("/status")
-def status(db: Session = Depends(get_db)):
+def status(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     chat_backend = "configured_unverified" if settings.key_gateway_configured else "local_fallback"
     embedding_backend = "configured_unverified" if settings.nvidia_configured else "local_fallback"
     ready_metadata_status = "available"
@@ -64,5 +69,8 @@ def status(db: Session = Depends(get_db)):
 
 
 @router.post("/index/reconcile")
-def reconcile_index(db: Session = Depends(get_db)):
+def reconcile_index(
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_admin),
+):
     return reconcile_cleanup_tasks(db)

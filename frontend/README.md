@@ -27,11 +27,13 @@ The tests cover the user-visible contracts that are easy to regress: sibling doc
 - Conversation history is request-identity checked, so a late response from a previous selection cannot replace the selected conversation.
 - Creating, selecting, or deleting the active conversation clears the current message/debug view while the new history loads.
 - Historical assistant messages use the API `debug` field to reopen their stored RAG trace.
-- The trace separates BM25, vector, RRF-fused, and final-rerank scores. Missing fields in older traces are shown as `—`.
+- The trace separates BM25, vector, RRF-fused, and final-rerank scores. Missing fields in older traces are shown as `Not available`.
+- Assistant responses say `Grounded response` only when the API confirms grounding or a historical message has cited sources; source-less answers say `No cited evidence`.
 - Provider status consumes `chat_backend`, `embedding_backend`, and `rerank_backend`. Configured-but-unverified providers are displayed as `configured (unverified)`, never as live.
 - Index lifecycle status preserves `index_status`, reingest/legacy-generation flags, and pending cleanup/action fields from `/api/system/status`; incomplete, degraded, empty, or unavailable coverage shows a non-live warning.
 - `/api/system/status` is configuration and index lifecycle metadata, not persisted provider health. Completed request traces are the per-call evidence of the backend actually used.
 - Document chunk preview failures are shown in the document row and surfaced through the toast stack.
+- Unsupported extensions and files over 10MB are rejected in the dialog before upload, while the API remains the authoritative validation boundary.
 - Upload failures remain in the dialog with an inline retry state; successful uploads close the dialog.
 
 The backend must be running before chat or document actions can succeed. The frontend does not perform provider health checks; `/api/system/status` is a configuration/status signal and completed request traces are the source of truth for the backend actually used.

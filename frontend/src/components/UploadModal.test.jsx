@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { vi } from "vitest";
 import { UploadModal } from "./UploadModal";
+import { MAX_DOCUMENT_BYTES } from "./documentUploadPolicy";
 
 function renderModal(overrides = {}) {
   return render(
@@ -70,4 +71,29 @@ test("traps Tab and Shift+Tab inside the upload dialog", async () => {
   expect(focusables).toHaveLength(7);
   expect(dialog).toBeInTheDocument();
   expect(category).toBeInTheDocument();
+});
+
+test("rejects unsupported files before invoking the upload boundary", async () => {
+  const onUpload = vi.fn();
+  renderModal({ onUpload });
+  const file = new File(["binary"], "payload.exe", { type: "application/octet-stream" });
+
+  fireEvent.change(screen.getByLabelText("Document file"), { target: { files: [file] } });
+
+  expect(screen.getByRole("alert")).toHaveTextContent("Unsupported file type '.exe'");
+  expect(screen.getByRole("button", { name: "Upload & ingest" })).toBeDisabled();
+  expect(onUpload).not.toHaveBeenCalled();
+});
+
+test("rejects documents over the advertised size limit", () => {
+  const onUpload = vi.fn();
+  renderModal({ onUpload });
+  const file = new File(["large"], "large.pdf", { type: "application/pdf" });
+  Object.defineProperty(file, "size", { value: MAX_DOCUMENT_BYTES + 1 });
+
+  fireEvent.change(screen.getByLabelText("Document file"), { target: { files: [file] } });
+
+  expect(screen.getByRole("alert")).toHaveTextContent("File exceeds 10MB limit");
+  expect(screen.getByRole("button", { name: "Upload & ingest" })).toBeDisabled();
+  expect(onUpload).not.toHaveBeenCalled();
 });

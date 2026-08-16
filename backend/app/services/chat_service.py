@@ -1,6 +1,8 @@
 """Orchestrates the full RAG query pipeline for a chat turn."""
 import asyncio
+import time
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session
 
@@ -54,21 +56,49 @@ def _history_for_llm(conversation) -> list[dict]:
     return [{"role": m.role, "content": m.content} for m in conversation.messages]
 
 
-async def answer_question(db: Session, conversation_id: str | None, question: str):
+async def answer_question(
+    db: Session,
+    conversation_id: str | None,
+    question: str,
+    user_id: str | None = None,
+):
     if conversation_id is not None:
         async with _TURN_LOCKS.hold(conversation_id):
-            return await _answer_turn(db, conversation_id, question)
-    return await _answer_turn(db, None, question)
+            return await _answer_turn(db, conversation_id, question, user_id)
+    return await _answer_turn(db, None, question, user_id)
 
 
-async def _answer_turn(db: Session, conversation_id: str | None, question: str):
-    conversation = conversation_repo.get_or_create_conversation(db, conversation_id, title_hint=question)
+async def _answer_turn(
+    db: Session,
+    conversation_id: str | None,
+    question: str,
+    user_id: str | None,
+):
+    processed_at = datetime.now(timezone.utc).isoformat()
+    stage_started = time.perf_counter()
+    timings_ms: dict[str, float] = {}
+
+    def mark(label: str) -> None:
+        nonlocal stage_started
+        now = time.perf_counter()
+        timings_ms[label] = round((now - stage_started) * 1000, 1)
+        stage_started = now
+
+    conversation = conversation_repo.get_or_create_conversation(
+        db,
+        conversation_id,
+        title_hint=question,
+        user_id=user_id,
+    )
     history = _history_for_llm(conversation)
 
     all_chunks = document_repo.list_ready_chunks(db)
     improved_query = await improve_query(question) if all_chunks else question.strip()
+    mark("query_rewrite_ms")
     retrieved, embedding_backend = await hybrid_retrieve(improved_query, all_chunks)
+    mark("retrieval_ms")
     used_chunks, all_reranked, rerank_backend = await build_context(improved_query, retrieved)
+    mark("rerank_ms")
     context_text = format_context_for_prompt(used_chunks)
     prompt_messages = build_chat_messages(context_text, question, history)
 
@@ -83,6 +113,8 @@ async def _answer_turn(db: Session, conversation_id: str | None, question: str):
         history,
         prepared_messages=prompt_messages,
     )
+    mark("generation_ms")
+    timings_ms["total_ms"] = round(sum(timings_ms.values()), 1)
     grounded = bool(used_chunks)
 
     sources = [
@@ -111,9 +143,12 @@ async def _answer_turn(db: Session, conversation_id: str | None, question: str):
     debug_trace = {
         "original_query": question,
         "improved_query": improved_query,
+        "query_rewritten": improved_query.strip().casefold() != question.strip().casefold(),
         "retrieval_mode": "hybrid_bm25_vector_rrf",
         "embedding_backend": embedding_backend,
         "rerank_backend": rerank_backend,
+        "processed_at": processed_at,
+        "timings_ms": timings_ms,
         "retrieved_chunks": [
             {
                 "chunk_id": c.retrieved.chunk.id,

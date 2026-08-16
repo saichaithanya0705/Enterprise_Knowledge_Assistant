@@ -23,7 +23,14 @@ class Settings(BaseSettings):
     nvidia_embedding_model: str = "nvidia/nv-embedqa-e5-v5"
     nvidia_rerank_model: str = "nvidia/nv-rerankqa-mistral-4b-v3"
 
+    # Authentication. Production deployments must override the development
+    # secret; startup rejects the placeholder outside local/test databases.
+    jwt_secret_key: str = "dev-only-change-me"
+    jwt_algorithm: str = "HS256"
+    jwt_expire_minutes: int = 720
+
     database_url: str = "sqlite:///./data/knowledge_assistant.db"
+    app_environment: str = "development"
     chroma_persist_dir: str = "./data/chroma"
     upload_dir: str = "./data/uploads"
     cors_origins: str = "http://localhost:5173,http://localhost:3000"
@@ -45,6 +52,10 @@ class Settings(BaseSettings):
     @property
     def nvidia_configured(self) -> bool:
         return bool(self.nvidia_api_key)
+
+    @property
+    def insecure_jwt_secret(self) -> bool:
+        return self.jwt_secret_key in {"", "dev-only-change-me", "change-me"}
 
 
 @lru_cache

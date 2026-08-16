@@ -3,9 +3,10 @@
 ## Layers
 
 ```
-React (src/pages, src/components)
-   → src/services (apiClient, documentService, chatService)
+React (public auth, protected user workspace, admin control room)
+   → token-aware src/services API boundary
       → FastAPI routes (app/api/routes)
+         → JWT identity dependency + database-backed role/ownership checks
          → Pydantic validation (app/schemas)
             → Service layer (app/services) — orchestration only, no I/O logic itself
                → Repositories (app/repositories) — SQLite access
@@ -14,6 +15,10 @@ React (src/pages, src/components)
 ```
 
 Routes validate input and shape responses. They may call a service or repository for the operation at hand; longer ingestion and query orchestration lives in `app/services/*`, so it remains testable and reusable outside the HTTP layer (e.g. from `seed.py`). Provider calls stay behind `app/llm/*` and RAG operations behind `app/rag/*`.
+
+Authentication is enforced server-side: Bearer tokens provide only a user id, while current role and active status are reloaded from SQLite on every protected request. Conversation and feedback repositories scope normal-user access by that database identity; only admin dependencies can cross ownership boundaries, inspect raw excerpts/debug traces, manage documents, or resolve recovery requests.
+
+Existing pre-authentication SQLite databases are upgraded idempotently with nullable ownership and soft-delete columns. Legacy conversations remain preserved as unowned records visible to administrators; fresh databases receive the complete ORM foreign-key constraints.
 
 ## Why ChromaDB is the vector source of truth
 

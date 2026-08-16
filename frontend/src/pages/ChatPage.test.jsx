@@ -49,6 +49,8 @@ test("renders stored debug traces from historical messages after reload", async 
   render(<ChatPage conversationId="conversation-a" onConversationCreated={vi.fn()} />);
 
   await screen.findByText("You have leave.");
+  expect(screen.getByText("No cited evidence")).toBeInTheDocument();
+  expect(screen.queryByText("Grounded response")).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "Show RAG trace" }));
 
   expect(screen.getByText("BM25")).toBeInTheDocument();

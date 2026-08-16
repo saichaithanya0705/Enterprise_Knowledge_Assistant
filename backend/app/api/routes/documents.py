@@ -5,7 +5,10 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, UploadFile, File, Form, HTTPException
 from sqlalchemy.orm import Session
 
+from app.api.dependencies.auth import require_admin
 from app.db.database import get_db
+from app.models.user import User
+from app.repositories import audit_repo
 from app.repositories import document_repo
 from app.services.document_service import ingest_document
 from app.schemas.document import DocumentCategory, DocumentOut, ChunkPreview
@@ -19,13 +22,19 @@ MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
 
 
 @router.get("", response_model=list[DocumentOut])
-def list_documents(db: Session = Depends(get_db)):
+def list_documents(
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_admin),
+):
     return document_repo.list_documents(db)
 
 
 @router.post("", response_model=DocumentOut, status_code=201)
 async def upload_document(
-    file: UploadFile = File(...), category: DocumentCategory = Form("General"), db: Session = Depends(get_db)
+    file: UploadFile = File(...),
+    category: DocumentCategory = Form("General"),
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_admin),
 ):
     ext = file.filename.split(".")[-1].lower()
     if ext not in ALLOWED_EXTENSIONS:
@@ -47,11 +56,24 @@ async def upload_document(
         )
         raise HTTPException(422, "Could not process document.")
 
+    doc.uploaded_by = admin.id
+    db.commit()
+    audit_repo.log_action(
+        db,
+        admin,
+        "DOCUMENT_UPLOAD",
+        target_type="document",
+        target_id=doc.id,
+    )
     return doc
 
 
 @router.get("/{doc_id}/chunks", response_model=list[ChunkPreview])
-def get_document_chunks(doc_id: str, db: Session = Depends(get_db)):
+def get_document_chunks(
+    doc_id: str,
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_admin),
+):
     doc = document_repo.get_document(db, doc_id)
     if not doc:
         raise HTTPException(404, "Document not found")
@@ -59,8 +81,19 @@ def get_document_chunks(doc_id: str, db: Session = Depends(get_db)):
 
 
 @router.delete("/{doc_id}", status_code=204)
-def delete_document(doc_id: str, db: Session = Depends(get_db)):
+def delete_document(
+    doc_id: str,
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_admin),
+):
     doc = document_repo.get_document(db, doc_id)
     if not doc:
         raise HTTPException(404, "Document not found")
     document_repo.delete_document(db, doc)
+    audit_repo.log_action(
+        db,
+        admin,
+        "DOCUMENT_DELETE",
+        target_type="document",
+        target_id=doc_id,
+    )
