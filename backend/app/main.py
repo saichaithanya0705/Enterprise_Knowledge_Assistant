@@ -37,7 +37,7 @@ app.add_middleware(
 )
 
 
-@app.get("/")
+@app.api_route("/", methods=["GET", "HEAD"])
 def root():
     return {"service": "enterprise-knowledge-assistant", "status": "running"}
 

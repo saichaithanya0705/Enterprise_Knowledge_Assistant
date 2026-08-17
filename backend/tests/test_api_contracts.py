@@ -70,6 +70,12 @@ def _chat(client, message="What is the policy?", conversation_id=None):
     return client.post("/api/chat", json=payload)
 
 
+def test_render_root_health_check_supports_head(anonymous_client):
+    response = anonymous_client.head("/")
+
+    assert response.status_code == 200
+
+
 def test_history_preserves_persisted_debug_trace(client):
     response = _chat(client)
     assert response.status_code == 200
