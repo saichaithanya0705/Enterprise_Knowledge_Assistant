@@ -17,7 +17,15 @@ def clean_text(text: str) -> str:
     return text.strip()
 
 
-_HEADING_RE = re.compile(r"^(#{1,3}\s+.+|[A-Z][A-Za-z0-9 /&\-]{3,60}:?)\s*$", re.MULTILINE)
+# Recognize explicit Markdown headings, conventional numbered policy sections,
+# and all-caps headings. The old title-case alternative also classified table
+# labels such as "Frequency", "Notes", and "Client dinner" as headings, which
+# fragmented extracted PDFs into tiny, context-free chunks (sometimes just a
+# dollar amount).
+_HEADING_RE = re.compile(
+    r"^(#{1,3}\s+.+|[A-Z][A-Z0-9 /&\-]{3,60}:?|\d{1,2}(?:\.\d+)*[.)]\s+[A-Z][^\n]{2,100})\s*$",
+    re.MULTILINE,
+)
 
 
 def _split_into_sections(text: str) -> list[tuple[str | None, str]]:
