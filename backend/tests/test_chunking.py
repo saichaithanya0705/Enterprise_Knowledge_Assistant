@@ -1,5 +1,6 @@
 """Unit tests for the chunking strategy."""
 from app.rag.chunking import chunk_document, clean_text
+from app.rag.loaders import _clean_pdf_pages
 
 
 def test_short_section_stays_one_chunk():
@@ -23,3 +24,36 @@ def test_clean_text_collapses_whitespace():
     cleaned = clean_text(messy)
     assert "\r" not in cleaned
     assert "\n\n\n" not in cleaned
+
+
+def test_pdf_table_labels_do_not_fragment_values_into_tiny_chunks():
+    text = """6. Equipment Stipend for Remote Work
+Allowance
+Amount
+Frequency
+Home office setup
+$750
+One-time, first 60 days
+Internet / connectivity stipend
+$50/month
+Monthly, added to payroll"""
+
+    chunks = chunk_document(text, chunk_size=800, chunk_overlap=100)
+
+    assert len(chunks) == 1
+    assert "$750" in chunks[0].content
+    assert "$50/month" in chunks[0].content
+
+
+def test_pdf_cleanup_removes_repeated_page_furniture_but_keeps_body_text():
+    pages = [
+        f"Employee Handbook\nConfidential - Internal\nPage {number}\nUnique policy body {number}"
+        for number in range(1, 5)
+    ]
+
+    cleaned = _clean_pdf_pages(pages)
+
+    assert "Employee Handbook" not in cleaned
+    assert "Confidential - Internal" not in cleaned
+    assert "Page 1" not in cleaned
+    assert "Unique policy body 1" in cleaned

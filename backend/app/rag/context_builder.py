@@ -93,9 +93,22 @@ async def rerank(query: str, retrieved: list[RetrievedChunk]) -> tuple[list[Cont
             passages = [r.chunk.content for r in retrieved]
             scores = await nvidia_client.rerank(query, passages)
             # NVIDIA logits aren't bounded 0-1 - squash with a stable sigmoid so
-            # extreme finite logits cannot overflow.
+            # extreme finite logits cannot overflow. Hosted reranker scores are
+            # not calibrated probabilities, though: production has returned a
+            # very negative logit for the exact top BM25 password-reset passage.
+            # Preserve strong, corroborated lexical evidence as a safety net so
+            # one miscalibrated model score cannot erase all otherwise-grounded
+            # context. This is the same gated signal used by the local reranker;
+            # vague/unrelated queries with no meaningful term overlap still fail
+            # closed and produce no context.
             scored = [
-                ContextChunk(retrieved=r, rerank_score=_stable_sigmoid(s))
+                ContextChunk(
+                    retrieved=r,
+                    rerank_score=max(
+                        _stable_sigmoid(s),
+                        r.fused_score * _term_overlap_boost(query, r.chunk.content),
+                    ),
+                )
                 for r, s in zip(retrieved, scores)
             ]
             return sorted(scored, key=lambda c: c.rerank_score, reverse=True), "nvidia"

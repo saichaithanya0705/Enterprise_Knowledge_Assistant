@@ -436,6 +436,33 @@ async def test_rerank_handles_extreme_finite_logits_without_overflow(monkeypatch
 
 
 @pytest.mark.asyncio
+async def test_nvidia_rerank_cannot_discard_exact_lexical_password_match(monkeypatch):
+    _configure_nvidia(monkeypatch)
+
+    async def miscalibrated_logit(*args, **kwargs):
+        return [-8.0]
+
+    monkeypatch.setattr(context_module.nvidia_client, "rerank", miscalibrated_logit)
+    chunk = SimpleNamespace(content="To reset your password, visit the self-service portal.")
+    retrieved = [
+        RetrievedChunk(
+            chunk=chunk,
+            vector_score=0.43,
+            bm25_score=1.0,
+            fused_score=1.0,
+        )
+    ]
+
+    used, reranked, backend = await context_module.build_context(
+        "How do I reset my password?", retrieved
+    )
+
+    assert backend == "nvidia"
+    assert reranked[0].rerank_score == 1.0
+    assert used[0].retrieved is retrieved[0]
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("transient_status", [429, 507])
 async def test_nvidia_retries_transient_statuses(monkeypatch, transient_status):
     _configure_nvidia(monkeypatch)

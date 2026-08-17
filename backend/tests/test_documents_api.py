@@ -1,5 +1,6 @@
 """API-level tests for document ingestion and the chat endpoint (local fallback mode)."""
 import io
+from pathlib import Path
 
 
 def test_upload_rejects_unsupported_extension(client):
@@ -47,3 +48,25 @@ def test_chat_grounds_answer_in_uploaded_document(client):
     assert body["grounded"] is True
     assert any(s["filename"] == "it.txt" for s in body["sources"])
     assert body["debug"]["embedding_backend"] == "local_fallback"
+
+
+def test_chat_grounds_answer_in_uploaded_multi_page_pdf(client):
+    pdf_path = Path(__file__).parents[2] / "output" / "pdf" / "nimbustack_employee_handbook.pdf"
+    with pdf_path.open("rb") as pdf:
+        upload = client.post(
+            "/api/documents",
+            files={"file": (pdf_path.name, pdf, "application/pdf")},
+            data={"category": "General"},
+        )
+
+    assert upload.status_code == 201, upload.text
+    assert upload.json()["status"] == "ready"
+    assert upload.json()["chunk_count"] < 40
+
+    response = client.post("/api/chat", json={"message": "How do I reset my password?"})
+    body = response.json()
+
+    assert response.status_code == 200
+    assert body["grounded"] is True
+    assert any(source["filename"] == pdf_path.name for source in body["sources"])
+    assert body["debug"]["final_context_chunk_ids"]
