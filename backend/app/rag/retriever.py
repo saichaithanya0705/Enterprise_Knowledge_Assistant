@@ -56,10 +56,16 @@ def _tokenize(text: str) -> list[str]:
     return [w for w in words if w not in _STOPWORDS] or words
 
 
+def _searchable_chunk_text(chunk: DocumentChunk) -> str:
+    """Include section titles in retrieval without duplicating them in stored text."""
+    section = getattr(chunk, "section", None) or ""
+    return f"{section}\n{chunk.content}" if section else chunk.content
+
+
 def _bm25_rank(query: str, chunks: list[DocumentChunk]) -> dict[str, float]:
     if not chunks:
         return {}
-    corpus = [_tokenize(c.content) for c in chunks]
+    corpus = [_tokenize(_searchable_chunk_text(c)) for c in chunks]
     bm25 = BM25Okapi(corpus)
     scores = bm25.get_scores(_tokenize(query))
     nonnegative_scores = [

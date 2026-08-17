@@ -4,6 +4,8 @@ before retrieval. Uses the Key Gateway chat model for rewriting when
 configured; otherwise falls back to a lightweight rule-based expansion so
 retrieval still benefits even in local-fallback mode.
 """
+import re
+
 import httpx
 
 from app.llm.gateway_client import gateway_client, GatewayError
@@ -16,11 +18,28 @@ _ABBREVIATIONS = {
     "reimb": "reimbursement",
 }
 _MAX_REWRITTEN_QUERY_LENGTH = 1000
+_COMPANY_OVERVIEW_QUERIES = {
+    "company",
+    "company overview",
+    "describe company",
+    "describe the company",
+    "tell me about company",
+    "tell me about the company",
+    "what does company do",
+    "what does the company do",
+}
 # Note: "it" (IT department) is deliberately excluded - it collides with the
 # common pronoun "it" and would corrupt most everyday questions.
 
 
 def _rule_based_expand(query: str) -> str:
+    normalized = " ".join(re.findall(r"[a-z0-9]+", query.lower()))
+    if normalized in _COMPANY_OVERVIEW_QUERIES:
+        return (
+            f"{query} company overview workflow automation products services "
+            "founded headcount"
+        )
+
     words = query.split()
     expanded = []
     for w in words:

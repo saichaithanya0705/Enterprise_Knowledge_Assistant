@@ -58,6 +58,11 @@ def _term_overlap_boost(query: str, content: str) -> float:
     return hits / len(query_terms)
 
 
+def _searchable_chunk_text(chunk) -> str:
+    section = getattr(chunk, "section", None) or ""
+    return f"{section}\n{chunk.content}" if section else chunk.content
+
+
 def _lexical_rerank(query: str, retrieved: list[RetrievedChunk]) -> list[ContextChunk]:
     """
     fused_score is normalized against the *best* candidate in this query's
@@ -71,7 +76,7 @@ def _lexical_rerank(query: str, retrieved: list[RetrievedChunk]) -> list[Context
     """
     scored = []
     for r in retrieved:
-        overlap = _term_overlap_boost(query, r.chunk.content)
+        overlap = _term_overlap_boost(query, _searchable_chunk_text(r.chunk))
         rerank_score = r.fused_score * overlap
         scored.append(ContextChunk(retrieved=r, rerank_score=rerank_score))
     return sorted(scored, key=lambda c: c.rerank_score, reverse=True)
@@ -90,7 +95,7 @@ async def rerank(query: str, retrieved: list[RetrievedChunk]) -> tuple[list[Cont
 
     if nvidia_client.configured:
         try:
-            passages = [r.chunk.content for r in retrieved]
+            passages = [_searchable_chunk_text(r.chunk) for r in retrieved]
             scores = await nvidia_client.rerank(query, passages)
             # NVIDIA logits aren't bounded 0-1 - squash with a stable sigmoid so
             # extreme finite logits cannot overflow. Hosted reranker scores are
@@ -106,7 +111,9 @@ async def rerank(query: str, retrieved: list[RetrievedChunk]) -> tuple[list[Cont
                     retrieved=r,
                     rerank_score=max(
                         _stable_sigmoid(s),
-                        r.fused_score * _term_overlap_boost(query, r.chunk.content),
+                        r.fused_score * _term_overlap_boost(
+                            query, _searchable_chunk_text(r.chunk)
+                        ),
                     ),
                 )
                 for r, s in zip(retrieved, scores)

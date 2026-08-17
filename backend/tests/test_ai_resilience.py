@@ -100,6 +100,14 @@ def _configure_nvidia(monkeypatch):
     monkeypatch.setattr(nvidia_module.settings, "nvidia_api_key", "test-key")
 
 
+def test_rule_based_rewrite_expands_broad_company_overview_questions():
+    rewritten = query_module._rule_based_expand("Tell me about the company")
+
+    assert "company overview" in rewritten.lower()
+    assert "workflow automation" in rewritten.lower()
+    assert "headcount" in rewritten.lower()
+
+
 @pytest.mark.asyncio
 async def test_query_rewrite_falls_back_for_transport_and_invalid_rewrites(monkeypatch):
     _configure_gateway(monkeypatch)
@@ -460,6 +468,33 @@ async def test_nvidia_rerank_cannot_discard_exact_lexical_password_match(monkeyp
     assert backend == "nvidia"
     assert reranked[0].rerank_score == 1.0
     assert used[0].retrieved is retrieved[0]
+
+
+@pytest.mark.asyncio
+async def test_company_overview_expansion_does_not_promote_generic_company_mentions(monkeypatch):
+    _configure_nvidia(monkeypatch)
+
+    async def miscalibrated_logits(*args, **kwargs):
+        return [-8.0, -8.0]
+
+    monkeypatch.setattr(context_module.nvidia_client, "rerank", miscalibrated_logits)
+    overview = SimpleNamespace(
+        content="We build workflow automation software. Founded in 2016.",
+        section="Company Overview",
+    )
+    equipment = SimpleNamespace(
+        content="Company-purchased equipment must be returned.",
+        section="Equipment Stipend",
+    )
+    retrieved = [
+        RetrievedChunk(overview, vector_score=0.3, bm25_score=1.0, fused_score=0.9),
+        RetrievedChunk(equipment, vector_score=0.4, bm25_score=0.8, fused_score=1.0),
+    ]
+    query = query_module._rule_based_expand("Tell me about the company")
+
+    used, _, _ = await context_module.build_context(query, retrieved)
+
+    assert [item.retrieved.chunk for item in used] == [overview]
 
 
 @pytest.mark.asyncio
